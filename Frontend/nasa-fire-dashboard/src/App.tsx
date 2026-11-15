@@ -1,891 +1,302 @@
-
-import { useState } from "react";
-
+import { useEffect, useState } from "react";
 import {
-  Activity,
-  Atom,
-  BrainCircuit,
-  Database,
-  FlaskConical,
   FileText,
-  LayoutDashboard,
-  ChevronRight,
-  Languages,
-  Sparkles,
+  FlaskConical,
+  LayoutGrid,
+  ListChecks,
+  MessageSquare,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sun,
 } from "lucide-react";
 
-import FilterBar from "./components/FilterBar";
-import ExperimentComparisonChart from "./components/ExperimentComparisonChart";
-import AiSummaryViewer from "./components/AiSummaryViewer";
-import ScientificAssistantChat from "./components/ScientificAssistantChat";
+import { api, modoDemo } from "./api/client";
+import { useAsync } from "./api/useAsync";
+import { PainelFonte } from "./components/Citacoes";
+import PainelExperiencia from "./components/PainelExperiencia";
+import { Gaveta } from "./components/ui";
+import { useFiltros } from "./hooks/useFiltros";
+import { usePreferencia } from "./hooks/usePreferencia";
+import { construirExperiencias } from "./lib/experiencias";
+import type { Experiencia } from "./lib/experiencias";
+import Assistente from "./pages/Assistente";
+import Conclusoes from "./pages/Conclusoes";
+import Experiencias from "./pages/Experiencias";
+import Resumos from "./pages/Resumos";
+import VisaoGeral from "./pages/VisaoGeral";
+import type { Fonte } from "./types/api";
 
-import type { AiSummary } from "./components/AiSummaryViewer";
-import type { AssistantReply } from "./components/ScientificAssistantChat";
+const PAGINAS = [
+  { id: "visao-geral", rotulo: "Visão Geral", curto: "Visão", icone: LayoutGrid },
+  { id: "experiencias", rotulo: "Experiências", curto: "Experiências", icone: FlaskConical },
+  { id: "conclusoes", rotulo: "Conclusões", curto: "Conclusões", icone: ListChecks },
+  { id: "resumos", rotulo: "Resumos", curto: "Resumos", icone: FileText },
+  { id: "assistente", rotulo: "Assistente", curto: "Assistente", icone: MessageSquare },
+] as const;
 
-import { useExperimentFilter } from "./hooks/useExperimentFilter";
+type PaginaId = (typeof PAGINAS)[number]["id"];
 
-import { comparisonDemo } from "./data/comparisonDemo";
-import { mockNasaData } from "./data/mockNasa";
-
-type Language = "pt" | "en";
-
-type PageKey =
-  | "overview"
-  | "experiments"
-  | "summaries"
-  | "assistant";
-
-// ======================================================
-// DEMONSTRATION SUMMARY
-// Replace this with summaries returned by the AI backend.
-// ======================================================
-
-const demoSummary: AiSummary = {
-  id: "FIRE-001",
-
-  title:
-    "Influência da concentração de oxigénio na propagação da chama",
-
-  confidence: 94,
-
-  executiveSummary:
-    "Esta análise demonstrativa explora a relação entre a concentração de oxigénio, a temperatura e o comportamento da chama em condições de microgravidade. Os resultados apresentados ilustram como o sistema poderá organizar e interpretar informação científica. Não representam uma conclusão oficial da NASA.",
-
-  keyFindings: [
-    "A concentração de oxigénio é uma variável importante na análise da combustão.",
-    "As condições de microgravidade devem ser consideradas na comparação dos experimentos.",
-    "A duração da chama pode ajudar a identificar diferenças entre condições experimentais.",
-    "São necessários dados experimentais validados para sustentar conclusões científicas.",
-  ],
-
-  rawTechnicalDetails: `{
-  "experiment_id": "FIRE-001",
-  "environment": "Microgravity",
-  "oxygen_concentration": "21%",
-  "temperature_unit": "Kelvin",
-  "analysis_method": "Comparative analysis",
-  "validation": "Pending",
-  "data_type": "Demonstration"
-}`,
-
-  source: "NASA experimental dataset (demo)",
-  generatedAt: "15/11/2026",
-};
-
-// ======================================================
-// NAVIGATION
-// ======================================================
-
-const navigation = [
-  {
-    id: "overview" as PageKey,
-    label: "Visão Geral",
-    labelEn: "Overview",
-    icon: LayoutDashboard,
-  },
-  {
-    id: "experiments" as PageKey,
-    label: "Experimentos",
-    labelEn: "Experiments",
-    icon: FlaskConical,
-  },
-  {
-    id: "summaries" as PageKey,
-    label: "Summaries",
-    labelEn: "Summaries",
-    icon: FileText,
-  },
-  {
-    id: "assistant" as PageKey,
-    label: "Assistente IA",
-    labelEn: "AI Assistant",
-    icon: BrainCircuit,
-  },
-];
-
-// ======================================================
-// AI API CONNECTION
-// ======================================================
-
-async function handleScientificQuestion(
-  question: string
-): Promise<AssistantReply> {
-  const response = await fetch("/api/ai/chat", {
-    method: "POST",
-
-    headers: {
-      "Content-Type": "application/json",
-    },
-
-    body: JSON.stringify({
-      question,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `AI API error: ${response.status}`
-    );
-  }
-
-  const data: AssistantReply = await response.json();
-
-  return data;
+function lerPagina(): PaginaId {
+  const id = window.location.hash.replace(/^#\/?/, "");
+  return PAGINAS.find((p) => p.id === id)?.id ?? "visao-geral";
 }
 
-// ======================================================
-// MAIN APP
-// ======================================================
+const SEM_EXPERIENCIAS: Experiencia[] = [];
 
-function App() {
-  const [activePage, setActivePage] =
-    useState<PageKey>("overview");
+const TEMAS = ["escuro", "claro"] as const;
+const ESTADOS_MENU = ["aberto", "recolhido"] as const;
 
-  const [language, setLanguage] =
-    useState<Language>("pt");
+const temaDoSistema = () =>
+  window.matchMedia("(prefers-color-scheme: light)").matches ? "claro" : "escuro";
 
-  const [collapsed, setCollapsed] =
-    useState(false);
-
-  // NASA DATA
-
-  const { experiments, insights } = mockNasaData;
-
-  // EXPERIMENT FILTERS
-
-  const {
-    search,
-    setSearch,
-
-    category,
-    setCategory,
-
-    status,
-    setStatus,
-
-    year,
-    setYear,
-
-    mission,
-    setMission,
-
-    categories,
-    years,
-    missions,
-    statuses,
-
-    filteredExperiments,
-    hasActiveFilters,
-    clearFilters,
-  } = useExperimentFilter(experiments);
-
-  // ====================================================
-  // TRANSLATIONS
-  // ====================================================
-
-  const text = {
-    pt: {
-      subtitle:
-        "Análise científica de combustão em microgravidade",
-
-      overview: "Visão Geral",
-      experiments: "Experimentos",
-      summaries: "Summaries",
-      assistant: "Assistente IA",
-
-      total: "Total de Experimentos",
-      completed: "Concluídos",
-      processing: "Em Análise",
-      pending: "Pendentes",
-
-      experiment: "Experimento",
-      mission: "Missão",
-      material: "Material",
-      temperature: "Temperatura",
-      oxygen: "Oxigénio",
-      status: "Estado",
-
-      noResults: "Nenhum experimento encontrado.",
-
-      insights: "Insights Científicos",
-
-      chart: "Comparação de Experimentos",
-
-      summariesDescription:
-        "Relatórios, descobertas e interpretações produzidas pelo módulo de Inteligência Artificial.",
-
-      assistantDescription:
-        "Explore os dados científicos através de perguntas e respostas.",
-
-      demo:
-        "Dados demonstrativos. Não representam resultados oficiais da NASA.",
-    },
-
-    en: {
-      subtitle:
-        "Scientific analysis of combustion in microgravity",
-
-      overview: "Overview",
-      experiments: "Experiments",
-      summaries: "Summaries",
-      assistant: "AI Assistant",
-
-      total: "Total Experiments",
-      completed: "Completed",
-      processing: "Processing",
-      pending: "Pending",
-
-      experiment: "Experiment",
-      mission: "Mission",
-      material: "Material",
-      temperature: "Temperature",
-      oxygen: "Oxygen",
-      status: "Status",
-
-      noResults: "No experiments found.",
-
-      insights: "Scientific Insights",
-
-      chart: "Experiment Comparison",
-
-      summariesDescription:
-        "Reports, findings and interpretations produced by the Artificial Intelligence module.",
-
-      assistantDescription:
-        "Explore scientific data through questions and answers.",
-
-      demo:
-        "Demonstration data. These are not official NASA findings.",
-    },
-  }[language];
-
-  // ====================================================
-  // KPI METRICS
-  // ====================================================
-
-  const totalExperiments = experiments.length;
-
-  const completedExperiments = experiments.filter(
-    (item) => item.status === "completed"
-  ).length;
-
-  const processingExperiments = experiments.filter(
-    (item) => item.status === "processing"
-  ).length;
-
-  const pendingExperiments = experiments.filter(
-    (item) => item.status === "pending"
-  ).length;
-
-  const metrics = [
-    {
-      label: text.total,
-      value: totalExperiments,
-      icon: Database,
-    },
-    {
-      label: text.completed,
-      value: completedExperiments,
-      icon: Activity,
-    },
-    {
-      label: text.processing,
-      value: processingExperiments,
-      icon: FlaskConical,
-    },
-    {
-      label: text.pending,
-      value: pendingExperiments,
-      icon: Atom,
-    },
-  ];
-
-  // ====================================================
-  // STATUS LABELS AND COLORS
-  // ====================================================
-
-  const statusLabels: Record<string, string> = {
-    completed: text.completed,
-    processing: text.processing,
-    pending: text.pending,
-  };
-
-  const statusStyles: Record<string, string> = {
-    completed:
-      "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-
-    processing:
-      "bg-amber-500/10 text-amber-400 border-amber-500/20",
-
-    pending:
-      "bg-slate-500/10 text-slate-400 border-slate-500/20",
-  };
-
-  // ====================================================
-  // CURRENT PAGE TITLE
-  // ====================================================
-
-  const currentPageTitle =
-    navigation.find(
-      (item) => item.id === activePage
-    )?.[language === "pt" ? "label" : "labelEn"] ??
-    text.overview;
-
-  // ====================================================
-  // RENDER
-  // ====================================================
-
+/** Marca do produto: a chama esférica azul com a brasa âmbar ao centro. */
+function Marca() {
   return (
-    <div className="min-h-screen bg-[#080d18] text-slate-100">
-
-      <div className="flex min-h-screen">
-
-        {/* ============================================
-            SIDEBAR
-        ============================================ */}
-
-        <aside
-          className={`${
-            collapsed ? "w-20" : "w-64"
-          } hidden md:flex flex-col border-r border-white/10 bg-[#0c1424] transition-all duration-300`}
-        >
-
-          {/* BRAND */}
-
-          <div className="flex h-20 items-center gap-3 border-b border-white/10 px-5">
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
-              <FlaskConical size={22} />
-            </div>
-
-            {!collapsed && (
-              <div>
-                <h1 className="text-sm font-bold tracking-wide">
-                  NASA FIRE
-                </h1>
-
-                <p className="text-xs text-slate-500">
-                  Research Dashboard
-                </p>
-              </div>
-            )}
-
-          </div>
-
-          {/* NAVIGATION */}
-
-          <nav className="flex-1 space-y-2 p-3">
-
-            {!collapsed && (
-              <p className="px-3 pb-2 pt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                {language === "pt"
-                  ? "Menu Principal"
-                  : "Main Menu"}
-              </p>
-            )}
-
-            {navigation.map((item) => {
-
-              const Icon = item.icon;
-
-              const active =
-                activePage === item.id;
-
-              return (
-                <button
-                  key={item.id}
-                  onClick={() =>
-                    setActivePage(item.id)
-                  }
-                  title={
-                    collapsed
-                      ? language === "pt"
-                        ? item.label
-                        : item.labelEn
-                      : undefined
-                  }
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
-                    active
-                      ? "border border-cyan-500/20 bg-cyan-500/10 text-cyan-400"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white"
-                  }`}
-                >
-
-                  <Icon size={19} />
-
-                  {!collapsed && (
-                    <span>
-                      {language === "pt"
-                        ? item.label
-                        : item.labelEn}
-                    </span>
-                  )}
-
-                  {!collapsed && active && (
-                    <ChevronRight
-                      className="ml-auto"
-                      size={16}
-                    />
-                  )}
-
-                </button>
-              );
-            })}
-
-          </nav>
-
-          {/* COLLAPSE SIDEBAR */}
-
-          <div className="border-t border-white/10 p-3">
-
-            <button
-              onClick={() =>
-                setCollapsed(!collapsed)
-              }
-              className="w-full rounded-xl px-3 py-3 text-left text-xs text-slate-500 hover:bg-white/5 hover:text-white"
-            >
-              {collapsed
-                ? "→"
-                : language === "pt"
-                  ? "← Recolher menu"
-                  : "← Collapse menu"}
-            </button>
-
-          </div>
-
-        </aside>
-
-        {/* ============================================
-            MAIN CONTENT
-        ============================================ */}
-
-        <main className="min-w-0 flex-1">
-
-          {/* HEADER */}
-
-          <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-[#0c1424]/80 px-5 py-4 md:px-8">
-
-            <div>
-              <h2 className="text-xl font-bold">
-                {currentPageTitle}
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                {text.subtitle}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-
-              {/* LANGUAGE */}
-
-              <button
-                onClick={() =>
-                  setLanguage(
-                    language === "pt" ? "en" : "pt"
-                  )
-                }
-                className="flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-300 hover:bg-white/5"
-              >
-                <Languages size={16} />
-
-                {language === "pt" ? "PT" : "EN"}
-              </button>
-
-              {/* SYSTEM STATUS */}
-
-              <div className="hidden items-center gap-2 rounded-xl border border-white/10 px-3 py-2 sm:flex">
-
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-
-                <span className="text-xs text-slate-400">
-                  {language === "pt"
-                    ? "Sistema Online"
-                    : "System Online"}
-                </span>
-
-              </div>
-
-            </div>
-
-          </header>
-
-          {/* ==========================================
-              PAGE CONTENT
-          ========================================== */}
-
-          <div className="space-y-8 p-5 md:p-8">
-
-            {/* ========================================
-                OVERVIEW
-            ======================================== */}
-
-            {activePage === "overview" && (
-
-              <section className="space-y-8">
-
-                {/* KPI CARDS */}
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-
-                  {metrics.map((metric) => {
-
-                    const Icon = metric.icon;
-
-                    return (
-                      <div
-                        key={metric.label}
-                        className="rounded-2xl border border-white/10 bg-[#101a2b] p-5"
-                      >
-
-                        <div className="flex items-center justify-between">
-
-                          <p className="text-sm text-slate-400">
-                            {metric.label}
-                          </p>
-
-                          <Icon
-                            className="text-cyan-400"
-                            size={20}
-                          />
-
-                        </div>
-
-                        <p className="mt-4 text-3xl font-bold">
-                          {metric.value}
-                        </p>
-
-                      </div>
-                    );
-                  })}
-
-                </div>
-
-                {/* EXPERIMENT TABLE */}
-
-                <div className="space-y-4">
-
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {text.experiments}
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      {language === "pt"
-                        ? "Pesquisa e filtragem dos dados experimentais."
-                        : "Search and filter experimental data."}
-                    </p>
-                  </div>
-
-                  {/* FILTER BAR */}
-
-                  <FilterBar
-                    language={language}
-                    search={search}
-                    setSearch={setSearch}
-                    category={category}
-                    setCategory={setCategory}
-                    status={status}
-                    setStatus={setStatus}
-                    year={year}
-                    setYear={setYear}
-                    mission={mission}
-                    setMission={setMission}
-                    categories={categories}
-                    years={years}
-                    missions={missions}
-                    statuses={statuses}
-                    hasActiveFilters={hasActiveFilters}
-                    clearFilters={clearFilters}
-                  />
-
-                  {/* TABLE */}
-
-                  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#101a2b]">
-
-                    <table className="w-full min-w-[850px] text-left text-sm">
-
-                      <thead className="border-b border-white/10 bg-white/[0.02] text-xs uppercase text-slate-500">
-
-                        <tr>
-                          <th className="px-5 py-4">
-                            {text.experiment}
-                          </th>
-
-                          <th className="px-5 py-4">
-                            {text.mission}
-                          </th>
-
-                          <th className="px-5 py-4">
-                            {text.material}
-                          </th>
-
-                          <th className="px-5 py-4">
-                            {text.temperature}
-                          </th>
-
-                          <th className="px-5 py-4">
-                            {text.oxygen}
-                          </th>
-
-                          <th className="px-5 py-4">
-                            {text.status}
-                          </th>
-                        </tr>
-
-                      </thead>
-
-                      <tbody className="divide-y divide-white/5">
-
-                        {filteredExperiments.map(
-                          (experiment) => (
-
-                            <tr
-                              key={experiment.id}
-                              className="hover:bg-white/[0.02]"
-                            >
-
-                              <td className="px-5 py-4 font-medium text-white">
-
-                                {experiment.title}
-
-                                <p className="mt-1 text-xs text-slate-500">
-                                  {experiment.id}
-                                </p>
-
-                              </td>
-
-                              <td className="px-5 py-4 text-slate-400">
-                                {experiment.mission}
-                              </td>
-
-                              <td className="px-5 py-4 text-slate-400">
-                                {experiment.material}
-                              </td>
-
-                              <td className="px-5 py-4 text-slate-300">
-                                {experiment.temperature} K
-                              </td>
-
-                              <td className="px-5 py-4 text-slate-300">
-                                {experiment.oxygenConcentration}%
-                              </td>
-
-                              <td className="px-5 py-4">
-
-                                <span
-                                  className={`rounded-full border px-3 py-1 text-xs ${
-                                    statusStyles[
-                                      experiment.status
-                                    ] ?? statusStyles.pending
-                                  }`}
-                                >
-                                  {statusLabels[
-                                    experiment.status
-                                  ] ?? experiment.status}
-                                </span>
-
-                              </td>
-
-                            </tr>
-
-                          )
-                        )}
-
-                        {filteredExperiments.length === 0 && (
-
-                          <tr>
-                            <td
-                              colSpan={6}
-                              className="px-5 py-10 text-center text-slate-500"
-                            >
-                              {text.noResults}
-                            </td>
-                          </tr>
-
-                        )}
-
-                      </tbody>
-
-                    </table>
-
-                  </div>
-
-                </div>
-
-                {/* SCIENTIFIC INSIGHTS */}
-
-                <div>
-
-                  <h3 className="mb-4 text-lg font-semibold">
-                    {text.insights}
-                  </h3>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-
-                    {insights.map((insight, index) => (
-
-                      <div
-                        key={index}
-                        className="rounded-2xl border border-white/10 bg-[#101a2b] p-5"
-                      >
-
-                        <div className="mb-3 flex items-center gap-2 text-cyan-400">
-
-                          <Sparkles size={18} />
-
-                          <span className="text-xs font-semibold uppercase tracking-wider">
-                            Insight
-                          </span>
-
-                        </div>
-
-                        <p className="font-medium text-slate-200">
-                          {insight.title}
-                        </p>
-
-                        <p className="mt-2 text-sm leading-6 text-slate-400">
-                          {insight.description}
-                        </p>
-
-                      </div>
-
-                    ))}
-
-                  </div>
-
-                </div>
-
-              </section>
-
-            )}
-
-            {/* ========================================
-                EXPERIMENTS
-            ======================================== */}
-
-            {activePage === "experiments" && (
-
-              <section className="space-y-6">
-
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {text.chart}
-                  </h3>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    {language === "pt"
-                      ? "Compare as variáveis dos experimentos científicos."
-                      : "Compare scientific experiment variables."}
-                  </p>
-                </div>
-
-                <ExperimentComparisonChart
-                  experiments={comparisonDemo}
-                  language={language}
-                />
-
-              </section>
-
-            )}
-
-            {/* ========================================
-                SUMMARIES
-            ======================================== */}
-
-            {activePage === "summaries" && (
-
-              <section className="space-y-6">
-
-                <div className="flex items-center gap-3">
-
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
-                    <BrainCircuit size={24} />
-                  </div>
-
-                  <div>
-
-                    <h3 className="text-lg font-semibold">
-                      {language === "pt"
-                        ? "Relatórios e Descobertas Científicas"
-                        : "Scientific Reports and Discoveries"}
-                    </h3>
-
-                    <p className="mt-1 text-sm text-slate-500">
-                      {text.summariesDescription}
-                    </p>
-
-                  </div>
-
-                </div>
-
-                <AiSummaryViewer
-                  summary={demoSummary}
-                  language={language}
-                />
-
-              </section>
-
-            )}
-
-            {/* ========================================
-                SCIENTIFIC AI ASSISTANT
-            ======================================== */}
-
-            {activePage === "assistant" && (
-
-              <section className="space-y-6">
-
-                <div>
-
-                  <h3 className="text-lg font-semibold">
-                    {language === "pt"
-                      ? "Assistente Científico IA"
-                      : "AI Scientific Assistant"}
-                  </h3>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    {text.assistantDescription}
-                  </p>
-
-                </div>
-
-                <ScientificAssistantChat
-                  language={language}
-                  onAsk={handleScientificQuestion}
-                  onSourceClick={(source) => {
-
-                    setSearch(source.id);
-
-                    setActivePage("overview");
-
-                  }}
-                />
-
-              </section>
-
-            )}
-
-            {/* ========================================
-                FOOTER
-            ======================================== */}
-
-            <footer className="border-t border-white/10 pt-5">
-
-              <p className="text-center text-xs text-slate-600">
-                NASA FIRE Dashboard · {text.demo}
-              </p>
-
-            </footer>
-
-          </div>
-
-        </main>
-
-      </div>
-
-    </div>
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true" className="shrink-0">
+      <circle cx="11" cy="11" r="8.5" fill="none" stroke="var(--color-chama)" strokeWidth="2" />
+      <circle cx="11" cy="11" r="2.5" fill="var(--color-ambar)" />
+    </svg>
   );
 }
 
-export default App;
+export default function App() {
+  const [pagina, setPagina] = useState<PaginaId>(lerPagina);
+  const [experienciaId, setExperienciaId] = useState<string | null>(null);
+  const [fonte, setFonte] = useState<Fonte | null>(null);
+  const [tema, setTema] = usePreferencia("cql-tema", TEMAS, temaDoSistema);
+  const [menu, setMenu] = usePreferencia("cql-menu", ESTADOS_MENU, () => "aberto");
+  const recolhido = menu === "recolhido";
+
+  useEffect(() => {
+    document.documentElement.dataset.tema = tema;
+  }, [tema]);
+
+  useEffect(() => {
+    const aoMudar = () => setPagina(lerPagina());
+    window.addEventListener("hashchange", aoMudar);
+    return () => window.removeEventListener("hashchange", aoMudar);
+  }, []);
+
+  const dados = useAsync(async () => {
+    const [documentos, extraccoes] = await Promise.all([
+      api.documentos(),
+      api.extraccoes(),
+    ]);
+    return { documentos, experiencias: construirExperiencias(documentos, extraccoes) };
+  }, []);
+  const conclusoes = useAsync(api.conclusoes, []);
+  const saude = useAsync(api.saude, []);
+
+  const experiencias = dados.fase === "ok" ? dados.dados.experiencias : SEM_EXPERIENCIAS;
+  const filtros = useFiltros(experiencias);
+  const experiencia = experiencias.find((e) => e.id === experienciaId) ?? null;
+  const actual = PAGINAS.find((p) => p.id === pagina)!;
+
+  useEffect(() => {
+    document.title = `${actual.rotulo} · Chama em Queda Livre`;
+  }, [actual.rotulo]);
+
+  return (
+    <div className={`min-h-screen bg-fundo text-texto ${recolhido ? "md:pl-14" : "md:pl-64"}`}>
+      {/* Barra lateral: a partir de 768px */}
+      <aside
+        className={`fixed inset-y-0 left-0 hidden flex-col border-r border-linha bg-superficie md:flex ${
+          recolhido ? "w-14" : "w-64"
+        }`}
+      >
+        <div className="border-b border-linha">
+          <div
+            className={`flex h-12 items-center ${
+              recolhido ? "justify-center" : "justify-between gap-2 pl-4 pr-2"
+            }`}
+          >
+            {!recolhido && (
+              <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-texto">
+                <Marca />
+                <span className="truncate">Chama em Queda Livre</span>
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setMenu(recolhido ? "aberto" : "recolhido")}
+              aria-expanded={!recolhido}
+              aria-label={recolhido ? "Expandir o menu" : "Recolher o menu"}
+              title={recolhido ? "Expandir o menu" : "Recolher o menu"}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-texto-2 hover:bg-superficie-2 hover:text-texto"
+            >
+              {recolhido ? (
+                <PanelLeftOpen size={16} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={16} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+          {recolhido ? (
+            <p className="flex justify-center pb-3">
+              <Marca />
+              <span className="sr-only">Chama em Queda Livre</span>
+            </p>
+          ) : (
+            <p className="px-4 pb-3 text-xs leading-4 text-texto-2">
+              Combustão em microgravidade · dados abertos da NASA
+            </p>
+          )}
+        </div>
+        <nav aria-label="Principal" className="flex-1 py-2">
+          <ul>
+            {PAGINAS.map((p) => {
+              const activa = p.id === pagina;
+              return (
+                <li key={p.id}>
+                  <a
+                    href={`#/${p.id}`}
+                    aria-current={activa ? "page" : undefined}
+                    title={recolhido ? p.rotulo : undefined}
+                    className={`flex items-center gap-2.5 border-l-2 py-2 text-sm -outline-offset-2 ${
+                      recolhido ? "justify-center px-0" : "px-4"
+                    } ${
+                      activa
+                        ? "border-chama bg-superficie-2 font-medium text-texto"
+                        : "border-transparent text-texto-2 hover:bg-superficie-2 hover:text-texto"
+                    }`}
+                  >
+                    <p.icone size={16} aria-hidden="true" className="shrink-0" />
+                    <span className={recolhido ? "sr-only" : ""}>{p.rotulo}</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      </aside>
+
+      <header className="sticky top-0 z-10 flex h-12 items-center justify-between gap-3 border-b border-linha bg-fundo px-4">
+        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold md:hidden">
+          <Marca />
+          <span className="truncate">Chama em Queda Livre</span>
+        </p>
+        <h1 className="hidden text-sm font-semibold md:block">{actual.rotulo}</h1>
+
+        <div className="flex shrink-0 items-center gap-2">
+        {modoDemo ? (
+          <p className="shrink-0 rounded-sm border border-linha-forte px-1.5 py-0.5 text-xs text-texto-2">
+            <span className="sm:hidden">Demonstração</span>
+            <span className="hidden sm:inline">Dados de demonstração</span>
+          </p>
+        ) : (
+          saude.fase === "ok" &&
+          saude.dados?.estado === "ok" && (
+            <p className="flex shrink-0 items-center gap-1.5 text-xs text-texto-2">
+              <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                <circle cx="4" cy="4" r="4" fill="var(--color-verde)" />
+              </svg>
+              Serviço ligado
+              <span className="hidden sm:inline">
+                {" "}
+                · <span className="num text-texto">{saude.dados.documentos}</span> documentos
+              </span>
+            </p>
+          )
+        )}
+          <button
+            type="button"
+            onClick={() => setTema(tema === "claro" ? "escuro" : "claro")}
+            aria-label={tema === "claro" ? "Mudar para o modo escuro" : "Mudar para o modo claro"}
+            title={tema === "claro" ? "Modo escuro" : "Modo claro"}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-linha-forte text-texto-2 hover:bg-superficie-2 hover:text-texto"
+          >
+            {tema === "claro" ? (
+              <Moon size={14} aria-hidden="true" />
+            ) : (
+              <Sun size={14} aria-hidden="true" />
+            )}
+          </button>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1400px] px-4 pt-4 pb-24 md:pb-6">
+        <div className="mb-3 md:hidden">
+          <h1 className="text-base font-semibold">{actual.rotulo}</h1>
+          <p className="text-xs text-texto-2">
+            Combustão em microgravidade · dados abertos da NASA
+          </p>
+        </div>
+
+        {pagina === "visao-geral" && (
+          <VisaoGeral
+            dados={dados}
+            conclusoes={conclusoes}
+            filtros={filtros}
+            onAbrir={setExperienciaId}
+          />
+        )}
+        {pagina === "experiencias" && (
+          <Experiencias dados={dados} filtros={filtros} onAbrir={setExperienciaId} />
+        )}
+        {pagina === "conclusoes" && (
+          <Conclusoes conclusoes={conclusoes} onAbrirFonte={setFonte} />
+        )}
+        {pagina === "resumos" && <Resumos dados={dados} onAbrirFonte={setFonte} />}
+        {pagina === "assistente" && <Assistente onAbrirFonte={setFonte} />}
+
+        <footer className="mt-6 border-t border-linha pt-3 text-xs text-texto-3">
+          Projecto independente, feito com dados abertos. Não é um produto oficial
+          da NASA nem tem o seu aval.
+          {modoDemo && " Os dados apresentados são de demonstração e não são resultados reais."}
+        </footer>
+      </main>
+
+      {/* Barra inferior: abaixo de 768px */}
+      <nav
+        aria-label="Principal"
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-linha bg-superficie md:hidden"
+      >
+        <ul className="grid grid-cols-5">
+          {PAGINAS.map((p) => {
+            const activa = p.id === pagina;
+            return (
+              <li key={p.id}>
+                <a
+                  href={`#/${p.id}`}
+                  aria-current={activa ? "page" : undefined}
+                  className={`flex h-14 flex-col items-center justify-center gap-1 border-t-2 text-[10px] -outline-offset-2 ${
+                    activa
+                      ? "border-chama font-medium text-texto"
+                      : "border-transparent text-texto-2"
+                  }`}
+                >
+                  <p.icone size={18} aria-hidden="true" />
+                  {p.curto}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {fonte ? (
+        <Gaveta
+          key={`fonte-${fonte.doc_id}-${fonte.tag}`}
+          titulo={`Fonte ${fonte.tag}`}
+          subtitulo="Trecho original"
+          voltar={experiencia !== null}
+          onFechar={() => setFonte(null)}
+        >
+          <PainelFonte fonte={fonte} />
+        </Gaveta>
+      ) : (
+        experiencia && (
+          <Gaveta
+            key={`experiencia-${experiencia.id}`}
+            titulo={experiencia.titulo}
+            subtitulo={<span className="num">{experiencia.id}</span>}
+            onFechar={() => setExperienciaId(null)}
+          >
+            <PainelExperiencia experiencia={experiencia} onAbrirFonte={setFonte} />
+          </Gaveta>
+        )
+      )}
+    </div>
+  );
+}
