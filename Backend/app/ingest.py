@@ -29,6 +29,7 @@ class Chunk:
     doc_id: str
     pagina: int
     text: str
+    referencias: bool = False  # o chunk é sobretudo uma lista de referências bibliográficas
 
 
 @dataclass
@@ -135,6 +136,22 @@ def criar_chunks(texto: str, tamanho: int = 1200, sobreposicao: int = 200) -> li
     return chunks
 
 
+_MARCAS_REF = re.compile(
+    r"\bpp?\.\s?\d|\bVol\.|\bet al\b|\bProc\.|\bCombust\.|\bJ\.\s|\bSymp|\bAIAA\b|\(\d{4}\)")
+
+
+def e_lista_de_referencias(texto: str) -> bool:
+    """Detecta chunks de bibliografia (muitos anos, iniciais de autores e marcas de revista).
+
+    Estes chunks repetem os termos do tema e sobem na busca sem conterem resultados,
+    por isso são penalizados (ver search.py). Os limiares são por ~1200 caracteres."""
+    escala = 1200 / max(len(texto), 300)
+    anos = len(re.findall(r"\b(?:19|20)\d{2}\b", texto)) * escala
+    iniciais = len(re.findall(r"\b[A-Z]\.(?:\s?[A-Z]\.)*,?\s", texto)) * escala
+    marcas = len(_MARCAS_REF.findall(texto)) * escala
+    return anos >= 5 and iniciais >= 8 and marcas >= 4
+
+
 # ---------------------------------------------------------------- leitura
 
 def extrair_paginas(caminho: Path) -> list[tuple[int, str]]:
@@ -189,7 +206,8 @@ def ingerir_documento(caminho: Path, tamanho: int = 1200, sobreposicao: int = 20
         if len(limpo) < 20:
             continue
         for j, texto in enumerate(criar_chunks(limpo, tamanho, sobreposicao)):
-            chunks.append(Chunk(id=f"{doc_id}:p{num}:c{j}", doc_id=doc_id, pagina=num, text=texto))
+            chunks.append(Chunk(id=f"{doc_id}:p{num}:c{j}", doc_id=doc_id, pagina=num, text=texto,
+                                referencias=e_lista_de_referencias(texto)))
     if not chunks:
         return None
     meta = carregar_metadados(caminho)

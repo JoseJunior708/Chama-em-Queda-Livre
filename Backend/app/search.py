@@ -16,6 +16,9 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
+PESO_REFERENCIAS = 0.4  # factor aplicado à pontuação de chunks de bibliografia
+
+
 class Embedder(Protocol):
     def embed(self, textos: list[str], tipo: str = "documento",
               titulos: list[str] | None = None) -> np.ndarray: ...
@@ -257,6 +260,9 @@ class Indice:
                 log.warning("Embedding da consulta falhou (%s); a usar só BM25.", e)
 
         final = peso * vec_n + (1 - peso) * lex_n
+        # listas de referências repetem os termos do tema mas não trazem resultados
+        final = final * np.array([PESO_REFERENCIAS if self.chunks[i].get("referencias") else 1.0
+                                  for i in candidatos], dtype=np.float32)
         ordem = np.argsort(-final)[:k]
         resultados = []
         for j in ordem:

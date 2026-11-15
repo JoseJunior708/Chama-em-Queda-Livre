@@ -65,3 +65,25 @@ def test_cache_de_embeddings_evita_recalcular(tmp_path):
 def test_glossario_expande_consulta():
     toks = expandir_consulta("pressão e fuligem")
     assert "pressure" in toks and "soot" in toks
+
+
+REFS = ("[11] B.L. Zhang, J.M. Card, and F.A. Williams. Combustion and Flame, 105 (1996) 267-290. "
+        "[12] B.L. Zhang and F.A. Williams. Combust. Flame, 112 (1998) 113-120. "
+        "[13] V. Nayagam, D.L. Dietrich, P.V. Ferkul, M.C. Hicks, F.A. Williams, Combust. Flame 159 (2012) 3583. "
+        "[14] T.I. Farouk, F.L. Dryer, Proc. Combust. Inst. 34 (2013) pp. 1609-1616. "
+        "[15] D.L. Dietrich et al., Microgravity Sci. Technol. 26 (2014) 65-76, droplet extinction.")
+
+
+def test_listas_de_referencias_sao_detectadas_e_penalizadas():
+    from app.ingest import e_lista_de_referencias
+    from tests.conftest import TEXTO_GOTAS
+    assert e_lista_de_referencias(REFS)
+    assert not e_lista_de_referencias(TEXTO_GOTAS)
+    docs = {"d": {"doc_id": "d", "titulo": "t", "metadados": {}}}
+    chunks = [{"id": "d:p9:c0", "doc_id": "d", "pagina": 9, "text": REFS, "referencias": True},
+              {"id": "d:p2:c0", "doc_id": "d", "pagina": 2, "referencias": False,
+               "text": "Radiative extinction of the droplet flame was observed at low oxygen."}]
+    res = Indice(docs, chunks).pesquisar("droplet extinction Williams Combustion Flame", k=2)
+    assert res[0]["id"] == "d:p2:c0"  # sem a penalização ganhava a bibliografia
+    assert Indice(docs, [dict(c, referencias=False) for c in chunks]).pesquisar(
+        "droplet extinction Williams Combustion Flame", k=2)[0]["id"] == "d:p9:c0"
