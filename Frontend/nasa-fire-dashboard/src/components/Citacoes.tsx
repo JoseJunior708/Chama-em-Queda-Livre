@@ -26,6 +26,41 @@ function segmentar(r: Resposta): { texto: string; frase?: Frase }[] {
   return troços;
 }
 
+/** Markdown em linha das respostas do modelo: **negrito**, *itálico* (ou
+    _itálico_), `código` e marcadores de lista no início da linha. O texto é
+    sempre inserido como texto, nunca como HTML. */
+function MarkdownEmLinha({ texto }: { texto: string }) {
+  const partes = texto
+    .replace(/^[ \t]*[-*][ \t]+/gm, "• ")
+    .replace(/^#{1,6}[ \t]+/gm, "")
+    .split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|\b_[^_\n]+_\b|`[^`\n]+`)/g);
+
+  return (
+    <>
+      {partes.map((p, i) => {
+        if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) {
+          return (
+            <strong key={i} className="font-semibold">
+              {p.slice(2, -2)}
+            </strong>
+          );
+        }
+        if (p.length > 2 && /^[*_]/.test(p) && p.at(-1) === p[0]) {
+          return <em key={i}>{p.slice(1, -1)}</em>;
+        }
+        if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) {
+          return (
+            <code key={i} className="num text-[0.9em]">
+              {p.slice(1, -1)}
+            </code>
+          );
+        }
+        return p;
+      })}
+    </>
+  );
+}
+
 /** Texto de uma resposta com as citações [S1] como chips e as frases não
     apoiadas sublinhadas. */
 export function TextoCitado({
@@ -39,26 +74,33 @@ export function TextoCitado({
 }) {
   const porTag = new Map(resposta.fontes.map((f) => [f.tag, f]));
 
+  const chip = (tag: string, chave: string) => {
+    const fonte = porTag.get(tag);
+    if (!fonte) return <span key={chave}>[{tag}]</span>;
+    return (
+      <button
+        key={chave}
+        type="button"
+        onClick={() => onAbrirFonte(fonte)}
+        onMouseEnter={() => onPreverFonte?.(fonte)}
+        onFocus={() => onPreverFonte?.(fonte)}
+        aria-label={`Fonte ${tag}: ${fonte.titulo}, página ${fonte.pagina}`}
+        className="num mx-0.5 inline-flex h-5 items-center rounded-sm border border-chama bg-chama-fundo px-1 align-baseline text-xs text-chama hover:bg-superficie-2"
+      >
+        {tag}
+      </button>
+    );
+  };
+
+  // Citações simples [S1] ou agrupadas [S4, S8]; o resto é Markdown em linha.
   const comChips = (texto: string) =>
-    texto.split(/(\[S\d+\])/g).map((parte, i) => {
-      const tag = /^\[(S\d+)\]$/.exec(parte)?.[1];
-      if (!tag) return parte;
-      const fonte = porTag.get(tag);
-      if (!fonte) return parte;
-      return (
-        <button
-          key={i}
-          type="button"
-          onClick={() => onAbrirFonte(fonte)}
-          onMouseEnter={() => onPreverFonte?.(fonte)}
-          onFocus={() => onPreverFonte?.(fonte)}
-          aria-label={`Fonte ${tag}: ${fonte.titulo}, página ${fonte.pagina}`}
-          className="num mx-0.5 inline-flex h-5 items-center rounded-sm border border-chama bg-chama-fundo px-1 align-baseline text-xs text-chama hover:bg-superficie-2"
-        >
-          {tag}
-        </button>
-      );
-    });
+    texto.split(/(\[S\d+(?:\s*,\s*S\d+)*\])/g).map((parte, i) =>
+      /^\[S\d/.test(parte) ? (
+        (parte.match(/S\d+/g) ?? []).map((tag, j) => chip(tag, `${i}-${j}`))
+      ) : (
+        <MarkdownEmLinha key={i} texto={parte} />
+      )
+    );
 
   return (
     <p className="whitespace-pre-wrap text-sm leading-6 text-texto">
@@ -82,6 +124,30 @@ export function TextoCitado({
 
 /** Faixa âmbar quando a verificação falha, com o motivo de cada frase. */
 export function AvisoVerificacao({ verificacao }: { verificacao: Verificacao }) {
+  const removidas = verificacao.removidas ?? [];
+  if (removidas.length > 0) {
+    return (
+      <details className="border-l-2 border-linha-forte bg-superficie-2 px-3 py-2 text-sm text-texto-2">
+        <summary className="cursor-pointer text-texto">
+          <span className="num">{removidas.length}</span>{" "}
+          {removidas.length === 1
+            ? "frase foi retirada da resposta por não ter apoio nas fontes."
+            : "frases foram retiradas da resposta por não terem apoio nas fontes."}
+        </summary>
+        <ul className="mt-2 space-y-2 text-xs">
+          {removidas.map((f) => (
+            <li key={f.i}>
+              <p className="line-through decoration-texto-3">{f.frase}</p>
+              <p>
+                {ROTULO_ESTADO[f.estado] ?? f.estado}
+                {f.motivo ? `. ${f.motivo}` : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </details>
+    );
+  }
   if (verificacao.fiavel) return null;
   const falhas = verificacao.frases.filter((f) => f.estado !== "apoiada");
 

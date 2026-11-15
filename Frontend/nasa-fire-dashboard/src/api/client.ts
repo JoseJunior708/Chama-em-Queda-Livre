@@ -63,8 +63,14 @@ export const api = {
   resumir: (doc_id: string): Promise<Resposta> =>
     modoDemo ? simular(demo.resumirDemo(doc_id)) : pedir("/summarize", { doc_id }),
 
-  perguntar: (pergunta: string): Promise<Resposta> =>
-    modoDemo ? simular(demo.perguntarDemo(pergunta)) : pedir("/ask", { pergunta }),
+  /** `historico` são as trocas anteriores, para o serviço perceber perguntas de seguimento. */
+  perguntar: (
+    pergunta: string,
+    historico: { pergunta: string; resposta: string }[] = [],
+  ): Promise<Resposta> =>
+    modoDemo
+      ? simular(demo.perguntarDemo(pergunta))
+      : pedir("/ask", { pergunta, historico }),
 };
 
 export const perguntasExemplo = demo.perguntasExemplo;

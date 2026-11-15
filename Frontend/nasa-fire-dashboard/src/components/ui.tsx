@@ -187,7 +187,7 @@ export function Selo({ verificado }: { verificado: boolean }) {
   ) : (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-ambar bg-ambar-fundo px-1.5 py-0.5 text-xs font-medium text-ambar">
       <CircleAlert size={12} aria-hidden="true" />
-      Por verificar
+      Não verificado
     </span>
   );
 }

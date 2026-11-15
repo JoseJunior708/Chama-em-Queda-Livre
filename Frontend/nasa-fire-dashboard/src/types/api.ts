@@ -27,6 +27,8 @@ export interface Frase {
 export interface Verificacao {
   fiavel: boolean;
   frases: Frase[];
+  /** Frases que o modelo escreveu mas o serviço retirou da resposta por falharem a verificação. */
+  removidas?: Frase[];
 }
 
 /** Devolvida por /ask, /summarize e /compare. */
@@ -34,6 +36,16 @@ export interface Resposta {
   resposta: string;
   fontes: Fonte[];
   verificacao: Verificacao;
+  /**
+   * "conversa": saudação ou pedido de ajuda, com texto fixo e sem fontes.
+   * "nao_encontrado": os documentos não respondem; `fontes` traz os trechos mais próximos.
+   * Ausente nas conclusões e no modo de demonstração (equivale a "resposta").
+   */
+  tipo?: "resposta" | "nao_encontrado" | "conversa";
+  /** Perguntas de exemplo, em "conversa" e "nao_encontrado". */
+  sugestoes?: string[];
+  /** Pergunta autónoma em que o serviço converteu uma pergunta de seguimento. */
+  pergunta_interpretada?: string | null;
 }
 
 /** Uma conclusão é uma resposta com identificador e título. */

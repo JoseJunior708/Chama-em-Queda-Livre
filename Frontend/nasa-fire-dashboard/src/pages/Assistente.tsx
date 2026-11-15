@@ -17,6 +17,81 @@ interface Troca {
 
 const ecraLargo = () => window.matchMedia("(min-width: 1024px)").matches;
 
+/** Documentos distintos das fontes, pela ordem em que aparecem. */
+function documentosProximos(fontes: Fonte[]): Fonte[] {
+  const vistos = new Set<string>();
+  return fontes.filter((f) => !vistos.has(f.doc_id) && vistos.add(f.doc_id)).slice(0, 4);
+}
+
+function Sugestoes({
+  perguntas,
+  onEscolher,
+}: {
+  perguntas: string[];
+  onEscolher: (pergunta: string) => void;
+}) {
+  if (perguntas.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {perguntas.map((p) => (
+        <li key={p}>
+          <button
+            type="button"
+            onClick={() => onEscolher(p)}
+            className="rounded-md border border-linha-forte px-2.5 py-1.5 text-left text-sm text-texto hover:border-chama hover:bg-superficie-2"
+          >
+            {p}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Mostrada quando os documentos não respondem: o que há de mais próximo e por onde continuar. */
+function SemResposta({
+  resposta,
+  onAbrirFonte,
+  onPerguntar,
+}: {
+  resposta: Resposta;
+  onAbrirFonte: (fonte: Fonte) => void;
+  onPerguntar: (pergunta: string) => void;
+}) {
+  const proximos = documentosProximos(resposta.fontes);
+  const sugestoes = resposta.sugestoes ?? [];
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="text-texto-2">{NAO_ENCONTREI}</p>
+      {proximos.length > 0 && (
+        <div>
+          <h3 className="font-medium text-texto">Documentos mais próximos da pergunta</h3>
+          <ul className="mt-1 space-y-1">
+            {proximos.map((f) => (
+              <li key={f.doc_id}>
+                <button
+                  type="button"
+                  onClick={() => onAbrirFonte(f)}
+                  className="text-left text-texto underline decoration-linha-forte underline-offset-2 hover:decoration-chama"
+                >
+                  {f.titulo}
+                </button>
+                <span className="num text-texto-3"> · p. {f.pagina}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {sugestoes.length > 0 && (
+        <div className="space-y-1.5">
+          <h3 className="font-medium text-texto">Experimenta, por exemplo</h3>
+          <Sugestoes perguntas={sugestoes} onEscolher={onPerguntar} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Assistente({
   onAbrirFonte,
 }: {
@@ -46,7 +121,13 @@ export default function Assistente({
     setTrocas((ts) => [...ts, { id, pergunta: limpa, estado: { fase: "carregar" } }]);
     setTexto("");
     try {
-      definir({ fase: "ok", resposta: await api.perguntar(limpa) });
+      // Só as respostas com conteúdo contam como contexto para a pergunta seguinte.
+      const historico = trocas.flatMap((t) =>
+        t.estado.fase === "ok" && (t.estado.resposta.tipo ?? "resposta") === "resposta"
+          ? [{ pergunta: t.pergunta, resposta: t.estado.resposta.resposta }]
+          : [],
+      );
+      definir({ fase: "ok", resposta: await api.perguntar(limpa, historico.slice(-3)) });
     } catch (e) {
       definir({
         fase: "erro",
@@ -97,6 +178,11 @@ export default function Assistente({
               </h2>
 
               <div className="pl-3.5">
+                {t.estado.fase === "ok" && t.estado.resposta.pergunta_interpretada && (
+                  <p className="mb-2 text-sm text-texto-3">
+                    Interpretei como: {t.estado.resposta.pergunta_interpretada}
+                  </p>
+                )}
                 {t.estado.fase === "carregar" && (
                   <div className="space-y-2" role="status">
                     <span className="sr-only">A procurar nos documentos…</span>
@@ -114,11 +200,20 @@ export default function Assistente({
                 )}
 
                 {t.estado.fase === "ok" &&
-                  (t.estado.resposta.resposta.trim() === NAO_ENCONTREI ? (
-                    <p className="text-sm text-texto-2">
-                      {NAO_ENCONTREI} Tenta reformular a pergunta ou usar termos
-                      que apareçam nos documentos.
-                    </p>
+                  (t.estado.resposta.tipo === "conversa" ? (
+                    <div className="space-y-3 text-sm">
+                      <p className="text-texto">{t.estado.resposta.resposta}</p>
+                      <Sugestoes
+                        perguntas={t.estado.resposta.sugestoes ?? []}
+                        onEscolher={(p) => void perguntar(p)}
+                      />
+                    </div>
+                  ) : t.estado.resposta.resposta.trim() === NAO_ENCONTREI ? (
+                    <SemResposta
+                      resposta={t.estado.resposta}
+                      onAbrirFonte={abrir}
+                      onPerguntar={(p) => void perguntar(p)}
+                    />
                   ) : (
                     <div className="space-y-2">
                       <AvisoVerificacao verificacao={t.estado.resposta.verificacao} />
