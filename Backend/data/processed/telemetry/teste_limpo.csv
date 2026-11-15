@@ -1,0 +1,5 @@
+time_s,flame_temperature,temperature_unit,pressure,pressure_unit,burning_rate_mm_s,soot_emission,flame_temperature_k,pressure_kpa,is_outlier,quality_flags
+0,25,C,1.0,atm,0.1,0.01,298.15,101.325,True,possível outlier
+1,100,C,101.325,kpa,0.12,0.02,373.15,101.325,False,
+2,212,F,1.0,bar,0.15,0.03,373.15,100.0,True,possível outlier
+3,500,K,100000.0,Pa,0.14,0.02,500.0,100.0,True,possível outlier

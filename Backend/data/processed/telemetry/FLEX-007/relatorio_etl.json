@@ -1,0 +1,48 @@
+{
+    "experiment": "FLEX-007",
+    "mission": "FLEX PSI-69",
+    "processed_at": "2026-11-15T18:30:02.604499+00:00",
+    "sensors": {
+        "ColorCamData": {
+            "source": "data\\raw\\FLEX_PSI69\\FLEX-007\\FLEX-007_ColorCamData.txt",
+            "output": "data\\processed\\telemetry\\FLEX-007\\ColorCamData.csv",
+            "rows_processed": 158,
+            "invalid_rows": 0,
+            "missing_values": {
+                "time_s": 0,
+                "flame_diameter_mm": 0,
+                "flame_standoff_mm": 50
+            },
+            "invalid_examples": []
+        },
+        "DropletData": {
+            "source": "data\\raw\\FLEX_PSI69\\FLEX-007\\FLEX-007_DropletData.txt",
+            "output": "data\\processed\\telemetry\\FLEX-007\\DropletData.csv",
+            "rows_processed": 141,
+            "invalid_rows": 0,
+            "missing_values": {
+                "time_s": 0,
+                "droplet_diameter_mm": 0,
+                "droplet_x_mm": 141,
+                "droplet_y_mm": 141
+            },
+            "invalid_examples": []
+        },
+        "LLUVData": {
+            "source": "data\\raw\\FLEX_PSI69\\FLEX-007\\FLEX-007_LLUVData.txt",
+            "output": "data\\processed\\telemetry\\FLEX-007\\LLUVData.csv",
+            "rows_processed": 177,
+            "invalid_rows": 0,
+            "missing_values": {
+                "time_s": 0,
+                "flame_diameter_mm": 0,
+                "flame_standoff_mm": 64,
+                "droplet_x_mm": 0,
+                "droplet_z_mm": 0
+            },
+            "invalid_examples": []
+        }
+    },
+    "warnings": [],
+    "test_sheet": "data\\processed\\telemetry\\FLEX-007\\TestSheet.txt"
+}

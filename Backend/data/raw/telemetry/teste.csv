@@ -1,0 +1,5 @@
+time_s,flame_temperature,temperature_unit,pressure,pressure_unit,burning_rate_mm_s,soot_emission
+0,25,C,1,atm,0.10,0.01
+1,100,C,101.325,kpa,0.12,0.02
+2,212,F,1,bar,0.15,0.03
+3,500,K,100000,Pa,0.14,0.02
