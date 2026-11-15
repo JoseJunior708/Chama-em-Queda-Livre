@@ -1,0 +1,18 @@
+# Segredos
+.env
+
+# Índice e caches gerados (embeddings, respostas do LLM)
+data/index/
+
+# Documentos descarregados pelo colector (recriar com: python -m app.collect)
+data/docs/*
+!data/docs/.gitkeep
+data/experiencias.json
+data/experiencias.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
