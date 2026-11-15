@@ -1,0 +1,17 @@
+[
+  {"id": 1, "pergunta": "Qual é a constante da taxa de queima das gotas de heptano observadas em microgravidade?"},
+  {"id": 2, "pergunta": "O que são chamas frias (cool flames) e em que condições foram observadas nas experiências com gotas?"},
+  {"id": 3, "pergunta": "Que diâmetros iniciais tinham as gotas usadas nas experiências FLEX?"},
+  {"id": 4, "pergunta": "Qual foi a velocidade de propagação da chama sobre combustíveis sólidos finos?"},
+  {"id": 5, "pergunta": "Que materiais foram queimados nas experiências Saffire?"},
+  {"id": 6, "pergunta": "Como varia a propagação da chama com a concentração de oxigénio?"},
+  {"id": 7, "pergunta": "Que efeito tem a velocidade do escoamento oposto na propagação da chama?"},
+  {"id": 8, "pergunta": "Como se comporta a formação de fuligem em chamas de difusão em microgravidade?"},
+  {"id": 9, "pergunta": "Qual é a diferença de comprimento entre chamas de jacto gasoso em microgravidade e em gravidade normal?"},
+  {"id": 10, "pergunta": "Que instalações foram usadas para obter microgravidade (ISS, torre de queda, voo parabólico)?"},
+  {"id": 11, "pergunta": "Que riscos de incêndio existem a bordo de naves espaciais e como são detectados?"},
+  {"id": 12, "pergunta": "O que acontece aos combustíveis perto do ponto crítico em fluidos supercríticos?"},
+  {"id": 13, "pergunta": "A que pressão foram realizadas as experiências de combustão?"},
+  {"id": 14, "pergunta": "Quanto custou a missão da Estação Espacial Internacional?"},
+  {"id": 15, "pergunta": "Quem ganhou o Campeonato do Mundo de futebol de 2010?"}
+]
