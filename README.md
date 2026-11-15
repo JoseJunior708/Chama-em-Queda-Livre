@@ -1,88 +1,89 @@
-# Chama em Queda Livre
+# Flame in Freefall
 
-**Combustão em microgravidade · dados abertos da NASA**
+**Microgravity combustion · NASA open data**
 
-Uma ferramenta para consultar o que a NASA publicou sobre fogo em microgravidade e segurança
-contra incêndios no espaço, sem ter de ler dezenas de relatórios técnicos. Responde a perguntas em
-português, mostra em que condições uma chama se propaga ou se extingue, e indica o documento e a
-página de onde vem cada afirmação.
+A tool to query what NASA has published on fire in microgravity and spacecraft fire safety,
+without having to read dozens of technical reports. It answers questions in Portuguese, shows under
+what conditions a flame spreads or extinguishes, and indicates the document and page where each
+statement comes from.
 
-> Projecto independente, feito com dados abertos. Não é um produto oficial da NASA nem tem o seu aval.
+> Independent project built with open data. It is not an official NASA product nor is it endorsed by NASA.
 
-![Visão Geral com dados de demonstração](docs/visao-geral.png)
+![Overview with demo data](docs/visao-geral.png)
 
-*Ecrã "Visão Geral" com dados de demonstração (sintéticos, não são resultados da NASA).*
+*"Overview" screen with demo data (synthetic, not NASA results).*
 
-## Porquê
+## Why
 
-No espaço o fogo comporta-se de outra maneira. Sem gravidade o ar quente não sobe, a chama fica
-esférica e azul, e pode manter-se com menos oxigénio e menos corrente de ar do que na Terra. Saber
-em que condições um material arde é o que permite desenhar naves seguras. Essa informação é pública,
-mas está espalhada por PDFs longos no servidor de relatórios técnicos da NASA (NTRS).
+In space, fire behaves differently. Without gravity, hot air does not rise, the flame becomes
+spherical and blue, and it can sustain itself with less oxygen and less airflow than on Earth.
+Knowing the conditions under which a material burns is what makes it possible to design safe
+spacecraft. This information is public, but it is scattered across lengthy PDFs on the NASA
+Technical Reports Server (NTRS).
 
-## O que faz
+## What it does
 
-- **Mapa de inflamabilidade:** um ponto por experiência, com a concentração de oxigénio num eixo e a
-  pressão ou a velocidade do escoamento no outro. A forma do ponto diz se a chama se propagou ou se
-  extinguiu.
-- **Tabela de experiências:** combustível, oxigénio, pressão, escoamento e resultado, com filtros,
-  ordenação, detalhe de cada experiência e comparação de 2 ou 3 lado a lado.
-- **Assistente:** perguntas livres em português sobre os documentos. Cada frase da resposta cita a
-  fonte, e a citação abre o trecho original.
-- **Resumos e conclusões:** o resumo de cada documento e respostas a perguntas fixas sobre segurança
-  contra incêndios, com selo "Verificado" ou "Por verificar".
+- **Flammability map:** one point per experiment, with oxygen concentration on one axis and
+  pressure or flow velocity on the other. The shape of the point indicates whether the flame spread
+  or extinguished.
+- **Experiments table:** fuel, oxygen, pressure, flow, and outcome, with filters, sorting, details
+  for each experiment, and side-by-side comparison of 2 or 3 experiments.
+- **Assistant:** free-form questions in Portuguese about the documents. Every sentence in the answer
+  cites its source, and clicking the citation opens the original excerpt.
+- **Summaries and conclusions:** a summary of each document and answers to fixed questions about
+  fire safety, labeled "Verified" or "Unverified".
 
-## A regra central: nenhuma afirmação sem fonte
+## The core rule: no claim without a source
 
-O modelo de linguagem só vê os trechos recuperados dos documentos e é obrigado a citar um trecho no
-fim de cada frase. Antes de a resposta ser devolvida, cada frase passa por três controlos:
+The language model only sees the excerpts retrieved from the documents and is required to cite an
+excerpt at the end of each sentence. Before the answer is returned, each sentence passes through
+three checks:
 
-1. **Citação válida:** a frase cita um trecho que existe.
-2. **Números na fonte:** todos os números da frase aparecem no trecho citado.
-3. **Apoio:** uma segunda chamada ao modelo, no papel de juiz, confirma que o trecho apoia a frase.
+1. **Valid citation:** the sentence cites an excerpt that exists.
+2. **Numbers in the source:** all numbers in the sentence appear in the cited excerpt.
+3. **Support:** a second call to the model, acting as a judge, confirms that the excerpt supports the sentence.
 
-A resposta só é marcada como fiável se todas as frases passarem. Quando falha, a interface mostra um
-aviso e sublinha as frases sem apoio. Se os documentos não respondem à pergunta, a resposta é
-"Não encontrei essa informação nos documentos."
+The answer is only marked as reliable if all sentences pass. When it fails, the interface displays
+a warning and underlines unsupported sentences. If the documents do not answer the question, the
+response is "I did not find this information in the documents."
 
-## Como funciona
+## How it works
 
 ```mermaid
 flowchart LR
-    NTRS[(NTRS<br/>relatórios da NASA)] -->|colector| PDF[PDFs e metadados]
-    PDF -->|ingestão| IDX[Índice<br/>trechos com página]
-    P([Pergunta]) --> BUSCA[Pesquisa híbrida<br/>palavras + significado]
+    NTRS[(NTRS<br/>NASA reports)] -->|collector| PDF[PDFs and metadata]
+    PDF -->|ingestion| IDX[Index<br/>excerpts with page]
+    P([Question]) --> BUSCA[Hybrid search<br/>keywords + meaning]
     IDX --> BUSCA
-    BUSCA -->|8 trechos S1..S8| LLM[Gemini]
-    LLM --> VER[Verificação<br/>frase a frase]
-    VER --> API[API FastAPI]
-    API --> WEB[Frontend React]
+    BUSCA -->|8 excerpts S1..S8| LLM[Gemini]
+    LLM --> VER[Verification<br/>sentence by sentence]
+    VER --> API[FastAPI API]
+    API --> WEB[React Frontend]
 ```
 
-1. **Recolha:** o colector pesquisa a API pública do NTRS e descarrega os PDFs.
-2. **Ingestão:** o texto é extraído página a página e cortado em trechos de cerca de 1200
-   caracteres, sem partir frases. Cada trecho guarda o documento e a página de origem.
-3. **Pesquisa híbrida:** combina pesquisa por palavras (BM25) com pesquisa por significado
-   (embeddings multilingues), o que permite perguntar em português sobre documentos em inglês.
-4. **Resposta:** os trechos mais relevantes são enviados ao modelo, numerados `S1`, `S2`…
-5. **Verificação:** a resposta é conferida frase a frase, como descrito acima.
-6. **Extracção:** para cada documento são extraídos combustível, ambiente, pressão, oxigénio,
-   velocidade do escoamento e resultado, cada valor com a sua fonte. Estes dados alimentam o mapa e
-   a tabela.
+1. **Collection:** the collector queries the public NTRS API and downloads the PDFs.
+2. **Ingestion:** text is extracted page by page and split into chunks of about 1200 characters
+   without breaking sentences. Each chunk stores its source document and page.
+3. **Hybrid search:** combines keyword search (BM25) with semantic search (multilingual
+   embeddings), allowing queries in Portuguese over documents in English.
+4. **Answer:** the most relevant excerpts are sent to the model, numbered `S1`, `S2`…
+5. **Verification:** the answer is checked sentence by sentence, as described above.
+6. **Extraction:** for each document, fuel, environment, pressure, oxygen, flow velocity, and
+   outcome are extracted, each value with its source. This data feeds the map and the table.
 
-## Estrutura do repositório
+## Repository structure
 
-| Pasta | Conteúdo |
+| Folder | Contents |
 |---|---|
-| [`Backend/`](Backend/) | Serviço Python (FastAPI): colector, ingestão, pesquisa, RAG, verificação, API e CLI. Documentação completa em [`Backend/README.md`](Backend/README.md). |
-| [`Frontend/nasa-fire-dashboard/`](Frontend/nasa-fire-dashboard/) | Aplicação web (React, TypeScript, Tailwind, Recharts). Ver [`README.md`](Frontend/nasa-fire-dashboard/README.md). |
-| [`docs/`](docs/) | Imagens da documentação. |
+| [`Backend/`](Backend/) | Python service (FastAPI): collector, ingestion, search, RAG, verification, API, and CLI. Full documentation in [`Backend/README.md`](Backend/README.md). |
+| [`Frontend/nasa-fire-dashboard/`](Frontend/nasa-fire-dashboard/) | Web application (React, TypeScript, Tailwind, Recharts). See [`README.md`](Frontend/nasa-fire-dashboard/README.md). |
+| [`docs/`](docs/) | Documentation images. |
 
-## Como correr
+## How to run
 
-### Só a interface, com dados de demonstração
+### Frontend only, with demo data
 
-Não precisa do Backend nem de chave de API. Requer Node 20.19 ou superior.
+Does not require the Backend or an API key. Requires Node 20.19 or higher.
 
 ```bash
 cd Frontend/nasa-fire-dashboard
@@ -90,27 +91,27 @@ npm install
 npm run dev
 ```
 
-Sem o ficheiro `.env`, a aplicação usa dados sintéticos e mostra a etiqueta "Dados de demonstração".
+Without the `.env` file, the application uses synthetic data and displays the "Demo data" label.
 
-### Sistema completo, com os documentos reais
+### Full system, with real documents
 
-**1. Backend** (Python 3.11 ou superior):
+**1. Backend** (Python 3.11 or higher):
 
 ```bash
 cd Backend
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # e preenche GEMINI_API_KEY
-python -m app.collect --max 40     # descarrega documentos do NTRS
-python -m app.cli index            # indexa os documentos
+cp .env.example .env               # and fill in GEMINI_API_KEY
+python -m app.collect --max 40     # downloads documents from NTRS
+python -m app.cli index            # indexes the documents
 uvicorn app.api:app --reload --port 8000
 ```
 
-A chave obtém-se no Google AI Studio. Sem chave o serviço arranca em modo reduzido: a pesquisa por
-palavras funciona, mas as perguntas, os resumos, as extracções e as conclusões devolvem o erro 503.
+The key is obtained from Google AI Studio. Without a key, the service starts in reduced mode:
+keyword search works, but questions, summaries, extractions, and conclusions return error 503.
 
-**2. Frontend**, noutro terminal:
+**2. Frontend**, in another terminal:
 
 ```bash
 cd Frontend/nasa-fire-dashboard
@@ -119,48 +120,57 @@ npm install
 npm run dev
 ```
 
-Se a porta 8000 estiver ocupada, usa outra no `uvicorn` e a mesma em `VITE_API_URL`.
+If port 8000 is busy, use another port in `uvicorn` and the same one in `VITE_API_URL`.
 
-**3. Preencher os gráficos:** o mapa e a tabela só mostram documentos com dados extraídos. A
-extracção faz-se por documento, com `python -m app.cli extract <doc_id>` ou
-`GET /extract/{doc_id}`. As conclusões geram-se no ecrã "Conclusões" ou com `POST /conclusions`.
+**3. Populating the charts:** the map and table only display documents with extracted data.
+Extraction is performed per document via `python -m app.cli extract <doc_id>` or
+`GET /extract/{doc_id}`. Conclusions are generated on the "Conclusions" screen or via
+`POST /conclusions`.
 
 ## API
 
-| Método | Rota | Para que serve |
+| Method | Route | Purpose |
 |---|---|---|
-| GET | `/health` | Estado do serviço e número de documentos |
-| GET | `/documents` | Documentos indexados e as suas categorias |
-| GET | `/search` | Pesquisa nos trechos |
-| POST | `/ask` | Pergunta com resposta verificada e fontes |
-| POST | `/summarize` | Resumo de um documento |
-| POST | `/compare` | Comparação de dois ou mais documentos |
-| GET | `/extract/{doc_id}` | Dados estruturados de um documento |
-| GET | `/extractions` | Todas as extracções já calculadas |
-| GET, POST | `/conclusions` | Ler ou gerar as conclusões |
-| POST | `/reindex` | Reindexar a pasta de documentos |
+| GET | `/health` | Service status and number of documents |
+| GET | `/documents` | Indexed documents and their categories |
+| GET | `/search` | Search across excerpts |
+| POST | `/ask` | Question with verified answer and sources |
+| POST | `/summarize` | Summary of a document |
+| POST | `/compare` | Comparison of two or more documents |
+| GET | `/extract/{doc_id}` | Structured data from a document |
+| GET | `/extractions` | All already computed extractions |
+| GET, POST | `/conclusions` | Read or generate conclusions |
+| POST | `/reindex` | Reindex the documents folder |
 
-As rotas `/ask`, `/summarize` e `/compare` devolvem sempre `resposta`, `fontes` e `verificacao`. Os
-formatos completos estão em [`Backend/README.md`](Backend/README.md) e, com o serviço a correr, em
-`http://localhost:8000/docs`.
+The `/ask`, `/summarize`, and `/compare` routes always return `resposta`, `fontes`, and
+`verificacao`. Full formats are documented in [`Backend/README.md`](Backend/README.md) and, while
+the service is running, at `http://localhost:8000/docs`.
 
-## Testes e verificação
+## Testing and verification
 
 ```bash
-cd Backend && python -m pytest                              # testes do Backend, sem rede nem chave
+cd Backend && python -m pytest                              # Backend tests, without network or API key
 cd Frontend/nasa-fire-dashboard && npm run build && npm run lint
 ```
 
-## Limitações conhecidas
+## Known limitations
 
-- Os dados de demonstração do frontend são sintéticos e servem só para mostrar a interface.
-- As unidades vêm dos documentos tal como estão; o frontend converte pressão para kPa e velocidade
-  para cm/s, e ignora unidades que não reconhece.
-- Os PDFs digitalizados, sem texto extraível, são ignorados na indexação.
-- A qualidade das respostas depende dos documentos indexados e do modelo; a verificação reduz o
-  risco de afirmações sem apoio, mas não substitui a leitura da fonte.
+- Frontend demo data is synthetic and serves only to showcase the interface.
+- Units come from the documents as-is; the frontend converts pressure to kPa and velocity to cm/s,
+  and ignores unrecognized units.
+- Scanned PDFs without extractable text are skipped during indexing.
+- Answer quality depends on the indexed documents and the model; verification reduces the risk of
+  unsupported claims, but does not replace reading the original source.
 
-## Fontes dos dados
+## Data sources & ETL Pipeline
 
-Os documentos vêm do [NASA Technical Reports Server (NTRS)](https://ntrs.nasa.gov/). Os PDFs não
-estão no repositório: são descarregados pelo colector.
+The documents come from the [NASA Technical Reports Server (NTRS)](https://ntrs.nasa.gov/). The
+PDFs are not included in the repository: they are downloaded by the collector.
+
+In addition to technical reports from the **NASA Technical Reports Server (NTRS)**, the backend incorporates structured empirical telemetry datasets from **NASA Physical Sciences Informatics (PSI)**—specifically liquid droplet combustion campaigns such as **FLEX-007** (PSI-69).
+
+### ETL & Data Processing Workflow
+Raw experimental tables (stored under `Backend/data/raw/`) undergo automated preprocessing:
+1. **Ingestion & Structuring:** Scripts such as `etl_flex.py` parse raw text and CSV logs (`ColorCamData.csv`, `DropletData.csv`, `LLUVData.csv`).
+2. **Normalisation:** Numerical parameters (such as droplet diameter, burning rates, camera frames, and environmental conditions) are cleaned and standardized.
+3. **Processed Output:** Cleaned telemetry and JSON reports are outputted to `Backend/data/processed/telemetry/` ready for relational loading and visualization in the React frontend.
