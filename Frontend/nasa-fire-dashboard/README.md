@@ -1,32 +1,31 @@
-# React + TypeScript + Vite
+# Chama em Queda Livre: frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Combustão em microgravidade · dados abertos da NASA. Projecto independente; não é um produto oficial da NASA.
 
-Currently, two official plugins are available:
+React, TypeScript, Tailwind v4 e Recharts.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Correr
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev      # servidor de desenvolvimento
+npm run build    # verificação de tipos e build
+npm run lint     # oxlint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Dados
+
+Sem configuração, a aplicação usa os dados de demonstração de `src/data/demo.ts`, que têm a
+mesma forma das respostas do Backend (`resposta`, `fontes`, `verificacao`).
+
+Para usar a API real, copia `.env.example` para `.env` e define `VITE_API_URL`. A troca é feita
+em `src/api/client.ts`; os componentes não mudam.
+
+## Estrutura
+
+- `src/index.css`: tokens de desenho (cores, raios, tipografia) e modo claro.
+- `src/types/api.ts`: formas das respostas do Backend.
+- `src/api/`: cliente e hook de estados (carregar, erro, ok).
+- `src/lib/experiencias.ts`: junta documentos e extracções e converte unidades (% O2, kPa, cm/s).
+- `src/pages/`: Visão Geral, Experiências, Conclusões, Resumos e Assistente.
+- `src/components/`: mapa de inflamabilidade, tabela, filtros, citações e painéis.
