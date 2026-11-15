@@ -123,7 +123,7 @@ class CacheEmbeddings:
         self.vetores: list[np.ndarray] = []
         if self.f_chaves.exists() and self.f_vetores.exists():
             try:
-                self.chaves = json.loads(self.f_chaves.read_text())
+                self.chaves = json.loads(self.f_chaves.read_text(encoding="utf-8"))
                 self.vetores = list(np.load(self.f_vetores))
             except Exception as e:
                 log.warning("Cache de embeddings corrompida, a ignorar: %s", e)
@@ -150,7 +150,7 @@ class CacheEmbeddings:
             log.warning("Dimensões diferentes na cache; a descartar entradas antigas.")
             return
         np.save(self.f_vetores, np.vstack(self.vetores))
-        self.f_chaves.write_text(json.dumps(self.chaves))
+        self.f_chaves.write_text(json.dumps(self.chaves), encoding="utf-8")
 
 
 def embed_com_cache(embedder: Embedder, cache: CacheEmbeddings, textos: list[str],
@@ -190,8 +190,14 @@ class Indice:
     # ---- persistência
     def salvar(self, pasta: Path) -> None:
         pasta.mkdir(parents=True, exist_ok=True)
-        (pasta / "documentos.json").write_text(json.dumps(self.documentos, ensure_ascii=False, indent=1))
-        (pasta / "chunks.json").write_text(json.dumps(self.chunks, ensure_ascii=False))
+        (pasta / "documentos.json").write_text(
+            json.dumps(self.documentos, ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
+        (pasta / "chunks.json").write_text(
+            json.dumps(self.chunks, ensure_ascii=False),
+            encoding="utf-8",
+        )
         f_vet = pasta / "vetores.npy"
         if self.vetores is not None:
             np.save(f_vet, self.vetores)
@@ -203,8 +209,8 @@ class Indice:
         f_docs, f_chunks = pasta / "documentos.json", pasta / "chunks.json"
         if not f_docs.exists() or not f_chunks.exists():
             return cls({}, [])
-        docs = json.loads(f_docs.read_text())
-        chunks = json.loads(f_chunks.read_text())
+        docs = json.loads(f_docs.read_text(encoding="utf-8"))
+        chunks = json.loads(f_chunks.read_text(encoding="utf-8"))
         f_vet = pasta / "vetores.npy"
         vetores = np.load(f_vet) if f_vet.exists() else None
         if vetores is not None and len(vetores) != len(chunks):

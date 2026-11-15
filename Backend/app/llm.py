@@ -105,14 +105,17 @@ class GeminiClient:
         f = self.pasta_cache / f"{chave}.json"
         if f.exists():
             try:
-                return json.loads(f.read_text())["texto"]
+                return json.loads(f.read_text(encoding="utf-8"))["texto"]
             except (ValueError, KeyError):
                 return None
         return None
 
     def _cache_set(self, chave: str, texto: str) -> None:
         self.pasta_cache.mkdir(parents=True, exist_ok=True)
-        (self.pasta_cache / f"{chave}.json").write_text(json.dumps({"texto": texto}, ensure_ascii=False))
+        (self.pasta_cache / f"{chave}.json").write_text(
+            json.dumps({"texto": texto}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     def generate(self, prompt: str, system: str | None = None, json_mode: bool = False,
                  temperature: float = 0.0, max_tokens: int | None = None) -> str:

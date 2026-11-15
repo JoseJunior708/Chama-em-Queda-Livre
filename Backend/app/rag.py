@@ -476,7 +476,7 @@ class Motor:
     def _ler_extracoes(self) -> dict:
         if self._f_extracoes.exists():
             try:
-                return json.loads(self._f_extracoes.read_text())
+                return json.loads(self._f_extracoes.read_text(encoding="utf-8"))
             except ValueError:
                 return {}
         return {}
@@ -541,7 +541,10 @@ class Motor:
                      "url": self._url(doc_id), "hash": doc.get("hash"), "campos": campos}
         cache[doc_id] = resultado
         self.s.index_dir.mkdir(parents=True, exist_ok=True)
-        self._f_extracoes.write_text(json.dumps(cache, ensure_ascii=False, indent=1))
+        self._f_extracoes.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
         return resultado
 
     # -------------------------------------------------------------- conclusões
@@ -555,7 +558,7 @@ class Motor:
         if not self._f_conclusoes.exists():
             return []
         try:
-            cache = json.loads(self._f_conclusoes.read_text())
+            cache = json.loads(self._f_conclusoes.read_text(encoding="utf-8"))
         except ValueError:
             return []
         if not isinstance(cache, dict) or cache.get("indice") != self._assinatura_indice():
@@ -577,5 +580,6 @@ class Motor:
                                "fontes": fontes, "verificacao": r["verificacao"]})
         self.s.index_dir.mkdir(parents=True, exist_ok=True)
         self._f_conclusoes.write_text(json.dumps(
-            {"indice": self._assinatura_indice(), "conclusoes": conclusoes}, ensure_ascii=False, indent=1))
+            {"indice": self._assinatura_indice(), "conclusoes": conclusoes},
+            ensure_ascii=False, indent=1), encoding="utf-8")
         return conclusoes
