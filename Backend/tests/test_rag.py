@@ -74,17 +74,48 @@ def test_perguntar_resposta_fiavel_com_fontes(motor):
     assert prompt_rag.startswith("TRECHOS:\n\n[S1] (documento:")
 
 
-def test_perguntar_detecta_invencao(motor):
+def test_perguntar_retira_frases_inventadas(motor):
     r = motor.perguntar("Qual o diâmetro das gotas?")
-    estados = [f["estado"] for f in r["verificacao"]["frases"]]
-    assert estados == ["numero_nao_encontrado", "sem_citacao"]
-    assert r["verificacao"]["fiavel"] is False
+    # as duas frases falham (número errado e sem citação): nada sobra para mostrar
+    assert r["resposta"] == NAO_ENCONTREI and r["tipo"] == "nao_encontrado"
+    assert [f["estado"] for f in r["verificacao"]["removidas"]] == ["numero_nao_encontrado", "sem_citacao"]
+    assert r["verificacao"]["frases"] == [] and r["verificacao"]["fiavel"] is True
+
+
+def test_retira_so_as_frases_sem_apoio(ambiente):
+    llm = FakeLLM({"Responde à pergunta": "A constante da taxa de queima foi 0.65 mm2/s [S1]. "
+                                          "As gotas tinham 9.9 mm de diâmetro [S1]. "
+                                          "O oxigénio era 21% a 1 atm [S1]."})
+    m = Motor(ambiente, llm=llm)
+    m.indexar()
+    r = m.perguntar("Qual a taxa de queima das gotas de heptano?")
+    assert r["resposta"] == "A constante da taxa de queima foi 0.65 mm2/s [S1]. O oxigénio era 21% a 1 atm [S1]."
+    v = r["verificacao"]
+    assert v["fiavel"] is True and [f["i"] for f in v["frases"]] == [1, 2]
+    assert len(v["removidas"]) == 1 and "9.9" in v["removidas"][0]["motivo"] and v["removidas"][0]["i"] == 2
+
+
+def test_juiz_indisponivel_nao_retira_frases(ambiente, monkeypatch):
+    llm = FakeLLM({"Responde à pergunta": "A constante da taxa de queima foi 0.65 mm2/s [S1]."})
+    m = Motor(ambiente, llm=llm)
+    m.indexar()
+    original = llm.generate_json
+
+    def juiz_falha(prompt, **kw):
+        if "FRASES A AVALIAR" in prompt:
+            raise RuntimeError("quota")
+        return original(prompt, **kw)
+
+    monkeypatch.setattr(llm, "generate_json", juiz_falha)
+    r = m.perguntar("Qual a taxa de queima das gotas de heptano?")
+    assert r["resposta"].startswith("A constante") and r["verificacao"]["fiavel"] is False
+    assert r["verificacao"]["removidas"] == []
 
 
 def test_nao_encontrei(motor):
     r = motor.perguntar("Quanto custou a missão?")
     assert r["resposta"] == NAO_ENCONTREI
-    assert r["verificacao"] == {"fiavel": True, "frases": []}
+    assert r["verificacao"] == {"fiavel": True, "frases": [], "removidas": []}
 
 
 def test_filtro_categoria_sem_resultados(motor):
@@ -147,3 +178,67 @@ def test_conclusoes_so_com_fonte_e_invalidadas_pelo_indice(motor):
     # Um documento alterado invalida as conclusões guardadas.
     motor.indice.documentos["flex_gotas"]["hash"] = "outro"
     assert motor.conclusoes_em_cache() == []
+
+
+def test_mensagens_de_conversa_nao_passam_pelo_llm(motor):
+    from app.rag import e_conversa
+    for texto in ("Olá!", "Podes me ajudar com algo?", "O que sabes fazer?", "Obrigado", "Quem és tu?"):
+        assert e_conversa(texto), texto
+    for texto in ("Podes ajudar-me a perceber porque se extinguem as gotas?", "Qual a pressão?",
+                  "Olá, o que é uma chama fria?"):
+        assert not e_conversa(texto), texto
+    antes = len(motor.llm.prompts)
+    r = motor.perguntar("Podes me ajudar com algo?")
+    assert r["tipo"] == "conversa" and r["sugestoes"] and r["fontes"] == []
+    assert r["verificacao"] == {"fiavel": True, "frases": []}
+    assert "3 documentos" in r["resposta"]
+    assert len(motor.llm.prompts) == antes  # nenhuma chamada ao LLM
+
+
+def test_tipo_da_resposta(motor):
+    assert motor.perguntar("Qual a taxa de queima das gotas de heptano?")["tipo"] == "resposta"
+    r = motor.perguntar("Quanto custou a missão?")
+    assert r["tipo"] == "nao_encontrado" and r["sugestoes"]
+
+
+def test_pergunta_de_seguimento_usa_o_historico(ambiente):
+    from app.rag import depende_do_historico
+    assert depende_do_historico("Oie, podes me ajudar a entender melhor isso?")
+    assert depende_do_historico("E a pressão?")
+    assert not depende_do_historico("Qual a velocidade de propagação da chama no algodão?")
+
+    llm = FakeLLM({
+        "PERGUNTA DE SEGUIMENTO": {"pergunta": "Explica melhor a taxa de queima das gotas de heptano"},
+        "Responde à pergunta: Explica melhor a taxa de queima":
+            "A constante da taxa de queima foi 0.65 mm2/s [S1].",
+    })
+    m = Motor(ambiente, llm=llm)
+    m.indexar()
+    historico = [{"pergunta": "Qual a taxa de queima das gotas de heptano?",
+                  "resposta": "A constante da taxa de queima foi 0.65 mm2/s [S1]."}]
+    r = m.perguntar("Oie, podes me ajudar a entender melhor isso?", historico=historico)
+    assert r["pergunta_interpretada"] == "Explica melhor a taxa de queima das gotas de heptano"
+    assert r["tipo"] == "resposta" and r["fontes"][0]["doc_id"] == "flex_gotas"
+    # sem histórico, a mesma mensagem não tem assunto: resposta de ajuda
+    assert m.perguntar("Oie, podes me ajudar a entender melhor isso?")["tipo"] == "conversa"
+    # pergunta completa não é reescrita, mesmo com histórico
+    n = sum("PERGUNTA DE SEGUIMENTO" in p for p in llm.prompts)
+    r2 = m.perguntar("Qual a velocidade de propagação da chama no algodão?", historico=historico)
+    assert r2["pergunta_interpretada"] is None
+    assert sum("PERGUNTA DE SEGUIMENTO" in p for p in llm.prompts) == n
+
+
+def test_pergunta_sobre_a_plataforma(motor):
+    from app.rag import e_sobre_a_plataforma
+    assert e_sobre_a_plataforma("Oie! Podes me ajudar a entender melhor sobre Chama de Queda Livre?")
+    assert e_sobre_a_plataforma("O que é a Chama em Queda Livre?")
+    assert not e_sobre_a_plataforma("Como se comporta uma chama numa torre de queda livre?")
+    assert not e_sobre_a_plataforma("Que documentos sobre gotas tem a Chama em Queda Livre?")
+    antes = len(motor.llm.prompts)
+    historico = [{"pergunta": "Qual a taxa de queima?", "resposta": "0.65 mm2/s [S1]."}]
+    r = motor.perguntar("Podes me ajudar a entender melhor sobre Chama de Queda Livre?", historico=historico)
+    assert r["tipo"] == "conversa" and "plataforma" in r["resposta"] and r["fontes"] == []
+    assert len(motor.llm.prompts) == antes
+    r = motor.perguntar("O que é esta plataforma?")
+    assert r["tipo"] == "conversa" and "projecto independente" in r["resposta"]
+    assert "plataforma" not in motor.perguntar("Olá!")["resposta"].split(".")[0]

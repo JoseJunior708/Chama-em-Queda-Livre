@@ -49,10 +49,17 @@ def _executar(fn, *args, **kwargs):
 
 # ------------------------------------------------------------------ modelos
 
+class Troca(BaseModel):
+    pergunta: str
+    resposta: str
+
+
 class PedidoPergunta(BaseModel):
     pergunta: str = Field(min_length=2)
     categoria: Optional[str] = None
     doc_id: Optional[str] = None
+    # trocas anteriores da conversa, para perceber perguntas de seguimento ("explica melhor isso")
+    historico: list[Troca] = Field(default_factory=list, max_length=10)
 
 
 class PedidoResumo(BaseModel):
@@ -83,12 +90,21 @@ class Frase(BaseModel):
 class Verificacao(BaseModel):
     fiavel: bool
     frases: list[Frase]
+    # frases que o modelo escreveu mas foram retiradas da resposta por falharem a verificação
+    removidas: list[Frase] = []
 
 
 class Resposta(BaseModel):
     resposta: str
     fontes: list[Fonte]
     verificacao: Verificacao
+
+
+class RespostaAssistente(Resposta):
+    tipo: str = "resposta"       # resposta | nao_encontrado | conversa
+    sugestoes: list[str] = []    # perguntas de exemplo (em conversa e nao_encontrado)
+    # pergunta autónoma em que uma pergunta de seguimento foi convertida (null se não foi)
+    pergunta_interpretada: Optional[str] = None
 
 
 class Conclusao(Resposta):
@@ -124,17 +140,18 @@ def search(q: str = Query(..., min_length=1), k: int = Query(8, ge=1, le=50),
     return {"q": q, "resultados": res}
 
 
-@app.post("/ask", response_model=Resposta)
+@app.post("/ask", response_model=RespostaAssistente)
 def ask(p: PedidoPergunta):
-    return _executar(motor().perguntar, p.pergunta, categoria=p.categoria, doc_id=p.doc_id)
+    return _executar(motor().perguntar, p.pergunta, categoria=p.categoria, doc_id=p.doc_id,
+                     historico=[t.model_dump() for t in p.historico])
 
 
-@app.post("/summarize", response_model=Resposta)
+@app.post("/summarize", response_model=RespostaAssistente)
 def summarize(p: PedidoResumo):
     return _executar(motor().resumir, p.doc_id)
 
 
-@app.post("/compare", response_model=Resposta)
+@app.post("/compare", response_model=RespostaAssistente)
 def compare(p: PedidoComparacao):
     return _executar(motor().comparar, p.doc_ids)
 

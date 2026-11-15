@@ -45,9 +45,10 @@ class Settings:
     chunk_overlap: int = 200
     embed_batch: int = 50
     max_retries: int = 6
-    top_k: int = 8
+    top_k: int = 10
     peso_vetorial: float = 0.65
     verify_judge: bool = True
+    remover_nao_apoiadas: bool = True
     timeout: float = 60.0
 
 
@@ -65,8 +66,9 @@ def get_settings() -> Settings:
         chunk_overlap=int(env("CHUNK_OVERLAP", "200")),
         embed_batch=min(100, int(env("EMBED_BATCH", "50"))),
         max_retries=int(env("MAX_RETRIES", "6")),
-        top_k=int(env("TOP_K", "8")),
+        top_k=int(env("TOP_K", "10")),
         peso_vetorial=float(env("PESO_VETORIAL", "0.65")),
         verify_judge=_bool(env("VERIFY_JUDGE", "true")),
+        remover_nao_apoiadas=_bool(env("REMOVER_NAO_APOIADAS", "true")),
         timeout=float(env("GEMINI_TIMEOUT", "60")),
     )

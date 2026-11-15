@@ -36,7 +36,11 @@ def test_fluxo_completo(cliente):
     ask = cliente.post("/ask", json={"pergunta": "Qual a taxa de queima das gotas?"})
     assert ask.status_code == 200
     corpo = ask.json()
-    assert set(corpo) == {"resposta", "fontes", "verificacao"}
+    assert set(corpo) == {"resposta", "fontes", "verificacao", "tipo", "sugestoes", "pergunta_interpretada"}
+    assert corpo["tipo"] == "resposta"
+
+    ajuda = cliente.post("/ask", json={"pergunta": "Podes me ajudar com algo?"}).json()
+    assert ajuda["tipo"] == "conversa" and ajuda["fontes"] == [] and len(ajuda["sugestoes"]) >= 3
     assert corpo["verificacao"]["fiavel"] is True
     assert set(corpo["fontes"][0]) == {"tag", "doc_id", "titulo", "pagina", "text", "url"}
     assert corpo["fontes"][0]["url"].startswith("https://ntrs.nasa.gov/citations/")

@@ -13,7 +13,7 @@ import re
 from .config import CATEGORIAS, NAO_ENCONTREI, Settings, get_settings
 from .ingest import ingerir_pasta
 from .llm import LLMError, criar_cliente
-from .search import CacheEmbeddings, Indice, embed_com_cache, sem_acentos
+from .search import CacheEmbeddings, Indice, embed_com_cache, sem_acentos, tokenizar
 from .verify import numeros_em_falta, verificar
 
 log = logging.getLogger(__name__)
@@ -33,8 +33,68 @@ no formato [S1] ou [S1, S3]. Exemplo: "A chama extinguiu-se ao fim de 3 s [S2]."
 4. Copia números e unidades exactamente como aparecem no trecho: não convertas unidades, \
 não arredondes, não calcules valores novos.
 5. Não escrevas frases sem citação (nem introduções, nem conclusões genéricas).
-6. Se os trechos não contêm a resposta, responde exactamente e apenas: "{NAO_ENCONTREI}"
-7. Se os trechos só respondem a parte do pedido, responde apenas a essa parte."""
+6. Se os trechos só respondem a parte do pedido, responde apenas a essa parte.
+7. Se os trechos não respondem directamente mas tratam do assunto do pedido, relata o que \
+eles dizem sobre esse assunto (observações, condições, explicações dadas pelos autores), \
+sempre com citação e sem acrescentar conclusões tuas. Usa apenas os trechos ligados ao assunto \
+do pedido: não listes factos soltos de outros temas só porque aparecem nos trechos.
+8. Só se nenhum trecho tiver relação com o pedido é que respondes exactamente e apenas: \
+"{NAO_ENCONTREI}"""
+
+# ------------------------------------------------------------------ conversa
+
+# Palavras de mensagens que não são perguntas sobre os documentos ("olá", "podes ajudar?").
+_CONVERSA = set("""
+ola oi oie bom dia boa tarde noite hello hi hey help tudo bem obrigado obrigada valeu
+entender perceber compreender explicar explica melhor mais isso isto aquilo
+plataforma site projeto projecto aplicacao app pagina ferramenta este esta esse essa
+pode podes ajudar ajuda ajudas algo alguma coisa favor preciso quero queria gostava
+quem es tu voce me te mim fazer faz sabe sabes consegue consegues funciona funcionas serve serves
+isto aqui pergunta perguntas perguntar posso exemplo exemplos tipo assistente sistema
+""".split())
+
+SUGESTOES = [
+    "A que concentração de oxigénio se extinguem as gotas de metanol?",
+    "O que são chamas frias e em que condições foram observadas?",
+    "Como varia a propagação da chama em PMMA com a velocidade do escoamento?",
+    "Que resultados teve a experiência BASS-II?",
+]
+
+
+# Palavras que remetem para a mensagem anterior ("explica melhor isso", "e a pressão dele?").
+_REMISSIVAS = set("""
+isso isto aquilo disso disto daquilo nisso nisto ele ela eles elas dele dela deles delas
+esse essa esses essas este esta estes estas mesmo mesma anterior acima
+""".split())
+
+SISTEMA_REESCREVER = (
+    "Reescreves perguntas de seguimento de uma conversa como perguntas autónomas, que se percebam "
+    "sem a conversa. Não respondes à pergunta nem acrescentas factos: só substituis as referências "
+    "(\"isso\", \"ele\", \"essa experiência\") pelo assunto de que a conversa tratava. Escreve em "
+    "português. Responde só com JSON.")
+
+
+def depende_do_historico(texto: str) -> bool:
+    """Verdadeiro se a pergunta só se percebe com a mensagem anterior."""
+    palavras = set(re.findall(r"[a-z]+", sem_acentos(texto.lower())))
+    conteudo = [t for t in tokenizar(texto) if t not in _CONVERSA]
+    return bool(palavras & _REMISSIVAS) or len(conteudo) <= 2
+
+
+_NOME_PLATAFORMA = re.compile(r"chama\s+(?:em|de|da|na)\s+queda\s+livre")
+
+
+def e_sobre_a_plataforma(texto: str) -> bool:
+    """Verdadeiro se a pergunta é sobre a própria plataforma e não sobre os documentos."""
+    base = sem_acentos(texto.lower())
+    nomeada = bool(_NOME_PLATAFORMA.search(base)) or bool(
+        re.search(r"\b(plataforma|site|projec?to|aplicacao|app|ferramenta)\b", base))
+    return nomeada and e_conversa(_NOME_PLATAFORMA.sub(" ", base))
+
+
+def e_conversa(texto: str) -> bool:
+    """Verdadeiro para saudações e pedidos de ajuda genéricos, sem conteúdo para pesquisar."""
+    return not [t for t in tokenizar(texto) if t not in _CONVERSA]
 
 
 def _contexto(fontes: list[dict]) -> str:
@@ -287,7 +347,8 @@ class Motor:
 
     def _responder(self, instrucao: str, fontes: list[dict]) -> dict:
         if not fontes:
-            return {"resposta": NAO_ENCONTREI, "fontes": [], "verificacao": {"fiavel": True, "frases": []}}
+            return {"resposta": NAO_ENCONTREI, "fontes": [], "verificacao": {"fiavel": True, "frases": []},
+                    "tipo": "nao_encontrado", "sugestoes": SUGESTOES}
         self._exigir_llm()
         prompt = f"TRECHOS:\n\n{_contexto(fontes)}\n\nPEDIDO:\n{instrucao}"
         resposta = self.llm.generate(prompt, system=SISTEMA_RAG).strip()
@@ -295,12 +356,84 @@ class Motor:
                 and len(resposta) < len(NAO_ENCONTREI) + 40:
             resposta = NAO_ENCONTREI
         verificacao = verificar(resposta, fontes, llm=self.llm, usar_juiz=self.s.verify_judge)
-        return {"resposta": resposta, "fontes": fontes, "verificacao": verificacao}
+        verificacao["removidas"] = []
+        if self.s.remover_nao_apoiadas:
+            resposta = self._retirar_nao_apoiadas(resposta, verificacao)
+        encontrou = resposta != NAO_ENCONTREI
+        return {"resposta": resposta, "fontes": fontes, "verificacao": verificacao,
+                "tipo": "resposta" if encontrou else "nao_encontrado",
+                "sugestoes": [] if encontrou else SUGESTOES}
 
-    def perguntar(self, pergunta: str, categoria: str | None = None, doc_id=None) -> dict:
+    @staticmethod
+    def _retirar_nao_apoiadas(resposta: str, verificacao: dict) -> str:
+        """Retira da resposta as frases que falharam a verificação e guarda-as em "removidas".
+
+        A resposta mostrada fica só com frases apoiadas. Se o juiz esteve indisponível não se
+        retira nada: nesse caso as frases não foram reprovadas, apenas ficaram por confirmar."""
+        frases = verificacao["frases"]
+        falhadas = [f for f in frases if f["estado"] != "apoiada"]
+        if not falhadas or any("Juiz indisponível" in f["motivo"] for f in falhadas):
+            return resposta
+        apoiadas = [f for f in frases if f["estado"] == "apoiada"]
+        for novo_i, f in enumerate(apoiadas, start=1):
+            f["i"] = novo_i
+        verificacao.update(frases=apoiadas, removidas=falhadas, fiavel=True)
+        return " ".join(f["frase"] for f in apoiadas) if apoiadas else NAO_ENCONTREI
+
+    def _conversa(self, sobre_plataforma: bool = False) -> dict:
+        """Resposta fixa a saudações e pedidos de ajuda: não passa pelo LLM nem afirma nada científico."""
+        n = len(self.indice.documentos)
+        if sobre_plataforma:
+            texto = (f"A Chama em Queda Livre é esta plataforma. Reúne {n} documentos públicos da NASA sobre "
+                     "experiências de combustão em microgravidade e segurança contra incêndios no espaço, "
+                     "organiza-os por tipo de experiência e permite pesquisá-los, resumi-los, compará-los e "
+                     "fazer-lhes perguntas. As respostas vêm só desses documentos e cada frase indica o trecho "
+                     "de onde vem. É um projecto independente, não é um produto oficial da NASA. "
+                     "Experimenta uma destas perguntas ou escreve a tua.")
+            return {"resposta": texto, "fontes": [], "verificacao": {"fiavel": True, "frases": []},
+                    "tipo": "conversa", "sugestoes": SUGESTOES}
+        texto = (f"Posso responder a perguntas sobre os {n} documentos da NASA indexados, que tratam de "
+                 "combustão em microgravidade e de segurança contra incêndios no espaço. Só uso o que está "
+                 "nesses documentos, e cada frase da resposta indica o trecho de onde vem. "
+                 "Experimenta uma destas perguntas ou escreve a tua.")
+        return {"resposta": texto, "fontes": [], "verificacao": {"fiavel": True, "frases": []},
+                "tipo": "conversa", "sugestoes": SUGESTOES}
+
+    def _reescrever(self, pergunta: str, historico: list[dict]) -> str:
+        """Transforma uma pergunta de seguimento numa pergunta autónoma, com base na conversa."""
+        conversa = "\n\n".join(
+            f"Utilizador: {h.get('pergunta', '')}\nAssistente: {str(h.get('resposta', ''))[:700]}"
+            for h in historico[-2:])
+        prompt = (f"CONVERSA ANTERIOR:\n{conversa}\n\nPERGUNTA DE SEGUIMENTO:\n{pergunta}\n\n"
+                  'Responde com {"pergunta": "<pergunta autónoma>"}')
+        try:
+            dados = self.llm.generate_json(prompt, system=SISTEMA_REESCREVER)
+            nova = str(dados.get("pergunta") or "").strip() if isinstance(dados, dict) else ""
+            if len(nova) >= 5:
+                return nova
+        except Exception as e:
+            log.warning("Não foi possível reescrever a pergunta de seguimento: %s", e)
+        # sem LLM, junta a pergunta anterior para a busca ter contexto
+        return f"{historico[-1].get('pergunta', '')} {pergunta}".strip()
+
+    def perguntar(self, pergunta: str, categoria: str | None = None, doc_id=None,
+                  historico: list[dict] | None = None) -> dict:
+        """`historico` são as trocas anteriores [{"pergunta", "resposta"}], da mais antiga à mais recente."""
         self._exigir_indice()
-        fontes = self._fontes(self.pesquisar(pergunta, doc_id=doc_id, categoria=categoria))
-        return self._responder(f"Responde à pergunta: {pergunta}", fontes)
+        interpretada = None
+        if e_sobre_a_plataforma(pergunta):
+            return self._conversa(sobre_plataforma=True)
+        if historico and self.llm is not None and depende_do_historico(pergunta):
+            interpretada = self._reescrever(pergunta, historico)
+        elif e_conversa(pergunta):
+            return self._conversa()
+        final = interpretada or pergunta
+        fontes = self._fontes(self.pesquisar(final, doc_id=doc_id, categoria=categoria))
+        r = self._responder(
+            f"Responde à pergunta: {final}\n"
+            "Começa pelo que responde mais directamente e usa no máximo 6 frases.", fontes)
+        r["pergunta_interpretada"] = interpretada
+        return r
 
     def _doc(self, doc_id: str) -> dict:
         self._exigir_indice()

@@ -30,7 +30,7 @@ cp .env.example .env               # e preenche GEMINI_API_KEY
 | `GEMINI_MODEL` | `gemini-3.6-flash` | Modelo de geração. |
 | `GEMINI_EMBED_MODEL` | `gemini-embedding-2` | Modelo de embeddings, multilingue: aceita perguntas em PT sobre documentos em EN. |
 | `GEMINI_EMBED_DIM` | `768` | Dimensão dos vectores. |
-| `TOP_K` | `8` | Número de trechos enviados ao LLM. |
+| `TOP_K` | `10` | Número de trechos enviados ao LLM. |
 | `PESO_VETORIAL` | `0.65` | Peso dos embeddings na busca híbrida (o resto vai para o BM25). |
 | `VERIFY_JUDGE` | `true` | Activa o LLM-juiz na verificação. |
 
@@ -121,7 +121,7 @@ O CORS está aberto a todas as origens.
 | GET | `/documents` | — |
 | GET | `/categories` | — |
 | GET | `/search` | `q`, `k` (1–50), `categoria?`, `doc_id?` |
-| POST | `/ask` | `{"pergunta": str, "categoria"?: str, "doc_id"?: str}` |
+| POST | `/ask` | `{"pergunta": str, "categoria"?: str, "doc_id"?: str, "historico"?: [{"pergunta", "resposta"}]}` |
 | POST | `/summarize` | `{"doc_id": str}` |
 | POST | `/compare` | `{"doc_ids": [str, str, ...]}` |
 | GET | `/extract/{doc_id}` | `forcar?=true` para recalcular |
@@ -168,6 +168,28 @@ As rotas `/ask`, `/summarize` e `/compare` devolvem:
   aviso quando é `false` e destacar as frases com problemas.
 - Se as fontes não respondem, a resposta é exactamente
   `"Não encontrei essa informação nos documentos."`, com `frases: []` e `fiavel: true`.
+- **Frases retiradas:** as frases que falham a verificação são retiradas da `resposta` e vão para
+  `verificacao.removidas` (com `frase`, `estado` e `motivo`). A resposta mostrada fica só com
+  frases apoiadas e `fiavel` é `true`. Se nenhuma frase sobrar, a resposta passa a
+  "Não encontrei…". Se o juiz estiver indisponível, nada é retirado e `fiavel` fica `false`.
+  Desliga-se com `REMOVER_NAO_APOIADAS=false` no `.env`.
+- **`tipo`** (só em `/ask`, `/summarize` e `/compare`) diz como mostrar a resposta:
+  - `resposta`: resposta normal, com citações e verificação.
+  - `nao_encontrado`: os documentos não respondem. `fontes` traz os trechos mais próximos da
+    pergunta, para mostrar "documentos mais próximos", e `sugestoes` traz perguntas de exemplo.
+  - `conversa`: a mensagem era uma saudação ou um pedido de ajuda ("olá", "podes ajudar?"). A
+    resposta é um texto fixo que explica o que o assistente faz, sem fontes e sem chamar o LLM,
+    e `sugestoes` traz perguntas de exemplo.
+- **Perguntas de seguimento:** o `/ask` aceita `historico`, uma lista opcional com as trocas
+  anteriores (`[{"pergunta": str, "resposta": str}]`, até 10). Se a pergunta nova depender da
+  conversa ("explica melhor isso", "e a pressão?"), o serviço converte-a numa pergunta autónoma
+  antes de pesquisar e devolve-a em `pergunta_interpretada` (`null` se não houve conversão).
+  Isto custa mais uma chamada ao LLM, só nessas perguntas.
+- Quando os trechos não respondem directamente mas tratam do assunto, o assistente relata o que
+  eles dizem, com citações, em vez de recusar. Só responde "Não encontrei…" quando nenhum trecho
+  tem relação com a pergunta.
+- Na busca, os chunks que são listas de referências bibliográficas têm a pontuação reduzida
+  (campo `referencias: true` no chunk), porque repetem os termos do tema sem trazer resultados.
 
 ### `/search`
 
